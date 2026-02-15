@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  XML Schema Definition for a Column-Oriented RDBMS Metadata Catalog
+  Namespace: http://columnar-rdbms.org/schema/v1
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:crdbms="http://columnar-rdbms.org/schema/v1"
+           targetNamespace="http://columnar-rdbms.org/schema/v1"
+           elementFormDefault="qualified"
+           version="1.0">
+
+  <!-- ===================================================================== -->
+  <!--                        SIMPLE TYPES                                   -->
+  <!-- ===================================================================== -->
+
+  <!-- Supported column data types -->
+  <xs:simpleType name="DataTypeEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="INTEGER"/>
+      <xs:enumeration value="BIGINT"/>
+      <xs:enumeration value="FLOAT"/>
+      <xs:enumeration value="DECIMAL"/>
+      <xs:enumeration value="VARCHAR"/>
+      <xs:enumeration value="TEXT"/>
+      <xs:enumeration value="BOOLEAN"/>
+      <xs:enumeration value="DATE"/>
+      <xs:enumeration value="TIMESTAMP"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Supported index types -->
+  <xs:simpleType name="IndexTypeEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="BTREE"/>
+      <xs:enumeration value="BITMAP"/>
+      <xs:enumeration value="HASH"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Foreign key actions -->
+  <xs:simpleType name="ReferentialActionType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CASCADE"/>
+      <xs:enumeration value="SET_NULL"/>
+      <xs:enumeration value="RESTRICT"/>
+      <xs:enumeration value="NO_ACTION"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- ===================================================================== -->
+  <!--                        COMPLEX TYPES                                  -->
+  <!-- ===================================================================== -->
+
+  <!-- Column Definition -->
+  <xs:complexType name="ColumnType">
+    <xs:sequence>
+      <xs:element name="defaultValue" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="columnId" type="xs:string" use="required"/>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="dataType" type="crdbms:DataTypeEnum" use="required"/>
+    <xs:attribute name="precision" type="xs:nonNegativeInteger" use="optional"/>
+    <xs:attribute name="scale" type="xs:nonNegativeInteger" use="optional"/>
+    <xs:attribute name="nullable" type="xs:boolean" default="true"/>
+  </xs:complexType>
+
+  <!-- Data Page: one block of column values stored on disk -->
+  <xs:complexType name="DataPageType">
+    <xs:sequence>
+      <xs:element name="minValue" type="xs:string" minOccurs="0"/>
+      <xs:element name="maxValue" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="pageId" type="xs:string" use="required"/>
+    <xs:attribute name="offset" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="size" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="nullCount" type="xs:nonNegativeInteger" default="0"/>
+    <xs:attribute name="rowCount" type="xs:nonNegativeInteger" use="optional"/>
+  </xs:complexType>
+
+  <!-- Column Storage Mapping: how a column is stored on disk -->
+  <xs:complexType name="ColumnStorageType">
+    <xs:sequence>
+      <xs:element name="dataFile">
+        <xs:complexType>
+          <xs:attribute name="filePath" type="xs:string" use="required"/>
+          <xs:attribute name="fileSize" type="xs:nonNegativeInteger" use="optional"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="dataPages">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="dataPage" type="crdbms:DataPageType" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="columnRef" type="xs:string" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Column reference (used inside indexes and constraints) -->
+  <xs:complexType name="ColumnRefType">
+    <xs:attribute name="columnRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Primary Index -->
+  <xs:complexType name="PrimaryIndexType">
+    <xs:sequence>
+      <xs:element name="indexedColumn" type="crdbms:ColumnRefType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Secondary Index -->
+  <xs:complexType name="SecondaryIndexType">
+    <xs:sequence>
+      <xs:element name="indexedColumn" type="crdbms:ColumnRefType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="indexType" type="crdbms:IndexTypeEnum" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Zone Map: min/max per block for query pruning -->
+  <xs:complexType name="ZoneMapType">
+    <xs:sequence>
+      <xs:element name="block" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="minValue" type="xs:string"/>
+            <xs:element name="maxValue" type="xs:string"/>
+          </xs:sequence>
+          <xs:attribute name="blockId" type="xs:string" use="required"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="columnRef" type="xs:string" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Primary Key Constraint -->
+  <xs:complexType name="PrimaryKeyType">
+    <xs:sequence>
+      <xs:element name="column" type="crdbms:ColumnRefType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Foreign Key Constraint -->
+  <xs:complexType name="ForeignKeyType">
+    <xs:sequence>
+      <xs:element name="column" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attribute name="columnRef" type="xs:string" use="required"/>
+          <xs:attribute name="referenceColumn" type="xs:string" use="required"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+    <xs:attribute name="referenceTable" type="xs:string" use="required"/>
+    <xs:attribute name="onDelete" type="crdbms:ReferentialActionType" default="NO_ACTION"/>
+  </xs:complexType>
+
+  <!-- Unique Constraint -->
+  <xs:complexType name="UniqueConstraintType">
+    <xs:sequence>
+      <xs:element name="column" type="crdbms:ColumnRefType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Check Constraint -->
+  <xs:complexType name="CheckConstraintType">
+    <xs:sequence>
+      <xs:element name="expression" type="xs:string"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Column Statistics -->
+  <xs:complexType name="ColumnStatisticsType">
+    <xs:attribute name="columnRef" type="xs:string" use="required"/>
+    <xs:attribute name="distinctCount" type="xs:nonNegativeInteger" use="optional"/>
+    <xs:attribute name="nullCount" type="xs:nonNegativeInteger" use="optional"/>
+    <xs:attribute name="minValue" type="xs:string" use="optional"/>
+    <xs:attribute name="maxValue" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Table Statistics -->
+  <xs:complexType name="TableStatisticsType">
+    <xs:sequence>
+      <xs:element name="columnStatistics" type="crdbms:ColumnStatisticsType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="tableRef" type="xs:string" use="required"/>
+    <xs:attribute name="rowCount" type="xs:nonNegativeInteger" use="optional"/>
+  </xs:complexType>
+
+  <!-- Table Definition -->
+  <xs:complexType name="TableType">
+    <xs:sequence>
+      <xs:element name="columns">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="column" type="crdbms:ColumnType" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="tableId" type="xs:string" use="required"/>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="rowCountEstimate" type="xs:nonNegativeInteger" use="optional"/>
+  </xs:complexType>
+
+  <!-- ===================================================================== -->
+  <!--                        ROOT ELEMENT                                   -->
+  <!-- ===================================================================== -->
+
+  <xs:element name="database">
+    <xs:complexType>
+      <xs:sequence>
+
+        <!-- 1. Tables -->
+        <xs:element name="tables">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="table" type="crdbms:TableType" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <!-- 2. Storage Mappings -->
+        <xs:element name="storageMappings" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="columnStorage" type="crdbms:ColumnStorageType"
+                          maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <!-- 3. Indexes -->
+        <xs:element name="indexes" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="primaryIndex" type="crdbms:PrimaryIndexType"
+                          minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="secondaryIndex" type="crdbms:SecondaryIndexType"
+                          minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="zoneMap" type="crdbms:ZoneMapType"
+                          minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <!-- 4. Constraints -->
+        <xs:element name="constraints" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="primaryKey" type="crdbms:PrimaryKeyType"
+                          minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="foreignKey" type="crdbms:ForeignKeyType"
+                          minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="unique" type="crdbms:UniqueConstraintType"
+                          minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="check" type="crdbms:CheckConstraintType"
+                          minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <!-- 5. Statistics (Optional) -->
+        <xs:element name="statistics" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="tableStatistics" type="crdbms:TableStatisticsType"
+                          maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+      </xs:sequence>
+
+      <!-- Database catalog attributes -->
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="version" type="xs:string" default="1.0"/>
+      <xs:attribute name="creationTimestamp" type="xs:dateTime" use="required"/>
+    </xs:complexType>
+
+    <!-- Enforce unique table IDs -->
+    <xs:key name="tableIdKey">
+      <xs:selector xpath="crdbms:tables/crdbms:table"/>
+      <xs:field xpath="@tableId"/>
+    </xs:key>
+
+    <!-- Enforce unique column IDs -->
+    <xs:key name="columnIdKey">
+      <xs:selector xpath="crdbms:tables/crdbms:table/crdbms:columns/crdbms:column"/>
+      <xs:field xpath="@columnId"/>
+    </xs:key>
+
+  </xs:element>
+
+</xs:schema>

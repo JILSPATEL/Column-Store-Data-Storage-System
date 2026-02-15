@@ -1,1 +1,0 @@
-# Column-Store-Data-Storage-System
