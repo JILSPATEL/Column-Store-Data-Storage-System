@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample XML: A small "university" database with students and enrollments.
+  This demonstrates all 7 sections of the columnar RDBMS schema.
+-->
+<crdbms:database
+    xmlns:crdbms="http://columnar-rdbms.org/schema/v1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://columnar-rdbms.org/schema/v1 columnar_rdbms_schema.xsd"
+    name="university_db"
+    version="1.0"
+    creationTimestamp="2026-02-15T10:00:00Z">
+
+  <!-- =================================================================== -->
+  <!-- SECTION 1 & 2 & 3: Database Catalog + Table + Column Definitions    -->
+  <!-- =================================================================== -->
+  <crdbms:tables>
+
+    <!-- Students Table -->
+    <crdbms:table tableId="tbl_students" name="students" rowCountEstimate="5">
+      <crdbms:columns>
+        <crdbms:column columnId="col_sid" name="student_id" dataType="INTEGER" nullable="false"/>
+        <crdbms:column columnId="col_sname" name="name" dataType="VARCHAR" precision="100" nullable="false"/>
+        <crdbms:column columnId="col_sage" name="age" dataType="INTEGER" nullable="false"/>
+        <crdbms:column columnId="col_sgpa" name="gpa" dataType="DECIMAL" precision="3" scale="2" nullable="true">
+          <crdbms:defaultValue>0.00</crdbms:defaultValue>
+        </crdbms:column>
+      </crdbms:columns>
+    </crdbms:table>
+
+    <!-- Enrollments Table -->
+    <crdbms:table tableId="tbl_enrollments" name="enrollments" rowCountEstimate="8">
+      <crdbms:columns>
+        <crdbms:column columnId="col_eid" name="enrollment_id" dataType="INTEGER" nullable="false"/>
+        <crdbms:column columnId="col_e_sid" name="student_id" dataType="INTEGER" nullable="false"/>
+        <crdbms:column columnId="col_course" name="course_name" dataType="VARCHAR" precision="100" nullable="false"/>
+        <crdbms:column columnId="col_grade" name="grade" dataType="VARCHAR" precision="2" nullable="true"/>
+      </crdbms:columns>
+    </crdbms:table>
+
+  </crdbms:tables>
+
+  <!-- =================================================================== -->
+  <!-- SECTION 4: Columnar Data Storage Mapping                            -->
+  <!--                                                                     -->
+  <!--   In a columnar DB, each COLUMN is stored in its own separate file. -->
+  <!--   Each file is split into "data pages" (blocks), and each page      -->
+  <!--   tracks min/max values so we can skip irrelevant pages.            -->
+  <!-- =================================================================== -->
+  <crdbms:storageMappings>
+
+    <!-- Storage for students.student_id column -->
+    <crdbms:columnStorage columnRef="col_sid" tableRef="tbl_students">
+      <crdbms:dataFile filePath="/data/university/students/col_student_id.dat" fileSize="4096"/>
+      <crdbms:dataPages>
+        <crdbms:dataPage pageId="pg_sid_1" offset="0" size="2048" nullCount="0" rowCount="5">
+          <crdbms:minValue>1</crdbms:minValue>
+          <crdbms:maxValue>5</crdbms:maxValue>
+        </crdbms:dataPage>
+      </crdbms:dataPages>
+    </crdbms:columnStorage>
+
+    <!-- Storage for students.name column -->
+    <crdbms:columnStorage columnRef="col_sname" tableRef="tbl_students">
+      <crdbms:dataFile filePath="/data/university/students/col_name.dat" fileSize="4096"/>
+      <crdbms:dataPages>
+        <crdbms:dataPage pageId="pg_sname_1" offset="0" size="2048" nullCount="0" rowCount="5">
+          <crdbms:minValue>Alice</crdbms:minValue>
+          <crdbms:maxValue>Eve</crdbms:maxValue>
+        </crdbms:dataPage>
+      </crdbms:dataPages>
+    </crdbms:columnStorage>
+
+    <!-- Storage for students.age column -->
+    <crdbms:columnStorage columnRef="col_sage" tableRef="tbl_students">
+      <crdbms:dataFile filePath="/data/university/students/col_age.dat" fileSize="4096"/>
+      <crdbms:dataPages>
+        <crdbms:dataPage pageId="pg_sage_1" offset="0" size="2048" nullCount="0" rowCount="5">
+          <crdbms:minValue>20</crdbms:minValue>
+          <crdbms:maxValue>24</crdbms:maxValue>
+        </crdbms:dataPage>
+      </crdbms:dataPages>
+    </crdbms:columnStorage>
+
+    <!-- Storage for students.gpa column -->
+    <crdbms:columnStorage columnRef="col_sgpa" tableRef="tbl_students">
+      <crdbms:dataFile filePath="/data/university/students/col_gpa.dat" fileSize="4096"/>
+      <crdbms:dataPages>
+        <crdbms:dataPage pageId="pg_sgpa_1" offset="0" size="2048" nullCount="1" rowCount="5">
+          <crdbms:minValue>3.20</crdbms:minValue>
+          <crdbms:maxValue>3.90</crdbms:maxValue>
+        </crdbms:dataPage>
+      </crdbms:dataPages>
+    </crdbms:columnStorage>
+
+  </crdbms:storageMappings>
+
+  <!-- =================================================================== -->
+  <!-- SECTION 5: Indexes                                                  -->
+  <!-- =================================================================== -->
+  <crdbms:indexes>
+
+    <crdbms:primaryIndex name="pk_students" tableRef="tbl_students">
+      <crdbms:indexedColumn columnRef="col_sid"/>
+    </crdbms:primaryIndex>
+
+    <crdbms:primaryIndex name="pk_enrollments" tableRef="tbl_enrollments">
+      <crdbms:indexedColumn columnRef="col_eid"/>
+    </crdbms:primaryIndex>
+
+    <crdbms:secondaryIndex name="idx_enroll_student" indexType="BTREE" tableRef="tbl_enrollments">
+      <crdbms:indexedColumn columnRef="col_e_sid"/>
+    </crdbms:secondaryIndex>
+
+    <!-- Zone Map: helps skip data pages that don't match a query -->
+    <crdbms:zoneMap columnRef="col_sage" tableRef="tbl_students">
+      <crdbms:block blockId="zm_age_1">
+        <crdbms:minValue>20</crdbms:minValue>
+        <crdbms:maxValue>24</crdbms:maxValue>
+      </crdbms:block>
+    </crdbms:zoneMap>
+
+  </crdbms:indexes>
+
+  <!-- =================================================================== -->
+  <!-- SECTION 6: Constraints and Relationships                            -->
+  <!-- =================================================================== -->
+  <crdbms:constraints>
+
+    <crdbms:primaryKey name="pk_students" tableRef="tbl_students">
+      <crdbms:column columnRef="col_sid"/>
+    </crdbms:primaryKey>
+
+    <crdbms:primaryKey name="pk_enrollments" tableRef="tbl_enrollments">
+      <crdbms:column columnRef="col_eid"/>
+    </crdbms:primaryKey>
+
+    <!-- Foreign Key: enrollments.student_id -> students.student_id -->
+    <crdbms:foreignKey name="fk_enroll_student"
+                       tableRef="tbl_enrollments"
+                       referenceTable="tbl_students"
+                       onDelete="CASCADE">
+      <crdbms:column columnRef="col_e_sid" referenceColumn="col_sid"/>
+    </crdbms:foreignKey>
+
+    <crdbms:check name="chk_age_positive" tableRef="tbl_students">
+      <crdbms:expression>age > 0</crdbms:expression>
+    </crdbms:check>
+
+    <crdbms:check name="chk_gpa_range" tableRef="tbl_students">
+      <crdbms:expression>gpa >= 0.00 AND gpa &lt;= 4.00</crdbms:expression>
+    </crdbms:check>
+
+  </crdbms:constraints>
+
+  <!-- =================================================================== -->
+  <!-- SECTION 7: System Statistics (used by query optimizer)              -->
+  <!-- =================================================================== -->
+  <crdbms:statistics>
+    <crdbms:tableStatistics tableRef="tbl_students" rowCount="5">
+      <crdbms:columnStatistics columnRef="col_sid" distinctCount="5" nullCount="0"
+                               minValue="1" maxValue="5"/>
+      <crdbms:columnStatistics columnRef="col_sage" distinctCount="5" nullCount="0"
+                               minValue="20" maxValue="24"/>
+      <crdbms:columnStatistics columnRef="col_sgpa" distinctCount="4" nullCount="1"
+                               minValue="3.20" maxValue="3.90"/>
+    </crdbms:tableStatistics>
+  </crdbms:statistics>
+
+</crdbms:database>
