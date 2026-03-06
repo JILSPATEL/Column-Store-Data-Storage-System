@@ -1,0 +1,241 @@
+COLUMN DATABASE (CDB) PROTOTYPE IMPLEMENTATION PROMPT
+
+Goal
+
+Implement a prototype column-oriented database system (CDB). The system
+must be modular so that the current text-based storage engine can later
+be replaced with a C/C++ binary column store without changing higher
+layers.
+
+Architecture
+
+Client | API Layer | CRUD / Query Engine | DDL + Schema Manager |
+Storage Engine (Text implementation for now)
+
+Future Architecture
+
+Client | API Layer | Query Engine | DDL Manager | Storage Interface |
+Binary Column Store (C++ implementation)
+
+Core Requirements
+
+DDL Operations - CREATE TABLE - DROP TABLE - ALTER TABLE (basic) -
+Constraints: * PRIMARY KEY * NOT NULL * UNIQUE
+
+DML Operations - INSERT - SELECT - UPDATE - DELETE
+
+Integrity Constraints - Primary key enforcement - Unique enforcement -
+Not null enforcement - Basic type checking
+
+Query Features - SELECT columns - WHERE filtering - Comparisons (=, >,
+<) - Projection
+
+Storage Model (Column Store)
+
+Example table:
+
+Users id | name | age
+
+Stored as:
+
+data/ Users/ id.col name.col age.col
+
+Each column file stores values line-by-line.
+
+Example:
+
+id.col 1 2 3
+
+name.col Alice Bob Charlie
+
+Rows are reconstructed using line index alignment across column files.
+
+Static DDL Storage
+
+Schema definitions stored as text metadata files.
+
+Example:
+
+metadata/ users.schema
+
+Schema file example:
+
+TABLE users COLUMN id INT PRIMARY_KEY COLUMN name STRING NOT_NULL COLUMN
+age INT
+
+The DDL Manager reads these files during initialization.
+
+Required Modules
+
+1.  Storage Engine Interface
+
+StorageEngine interface responsibilities:
+
+-   readColumn(table, column)
+-   appendValue(table, column, value)
+-   updateValue(table, column, rowIndex, value)
+-   deleteRow(table, rowIndex)
+-   createTable(schema)
+-   dropTable(table)
+
+This interface allows swapping in a C++ storage engine later.
+
+2.  Text Storage Implementation
+
+TextStorageEngine implements StorageEngine
+
+Responsibilities: - Store column data in text files - Maintain directory
+structure - Ensure row alignment across columns - Append rows
+consistently across all columns
+
+3.  Schema Manager (DDL Layer)
+
+SchemaManager responsibilities: - Parse schema files - Store schema
+metadata in memory - Enforce column types - Enforce constraints
+
+Structures:
+
+TableSchema tableName columns[]
+
+ColumnSchema name type constraints
+
+4.  Query Engine (DML / CRUD)
+
+QueryEngine handles:
+
+-   insert()
+-   select()
+-   update()
+-   delete()
+
+Responsibilities: - Coordinate with SchemaManager - Call StorageEngine -
+Enforce constraints before storage - Apply WHERE filters
+
+SELECT execution flow:
+
+QueryEngine -> SchemaManager (validate columns) -> StorageEngine (read
+column files) -> Apply WHERE filter -> Project requested columns
+
+5.  Query Parser
+
+Implement a basic SQL-like parser.
+
+Supported queries:
+
+CREATE TABLE users (id INT PRIMARY_KEY, name STRING, age INT) INSERT
+INTO users VALUES (1, “Alice”, 25) SELECT name, age FROM users WHERE
+age > 20 UPDATE users SET age=30 WHERE id=1 DELETE FROM users WHERE id=3
+
+Parser should convert queries into query objects:
+
+-   SelectQuery
+-   InsertQuery
+-   UpdateQuery
+-   DeleteQuery
+-   CreateTableQuery
+
+6.  API Layer
+
+DatabaseAPI methods:
+
+-   execute(queryString)
+-   createTable(schema)
+-   insert(table, values)
+-   select(table, columns, filter)
+-   update(table, setClause, filter)
+-   delete(table, filter)
+
+This layer is the public interface of the database.
+
+7.  Client Interface
+
+Implement a CLI client.
+
+Example session:
+
+CDB > CREATE TABLE users (id INT PRIMARY_KEY, name STRING, age INT)
+CDB > INSERT INTO users VALUES (1, “Alice”, 22) CDB > SELECT name FROM
+users WHERE age > 20
+
+Design Requirements
+
+1.  Storage Decoupling
+
+All storage operations must go through the StorageEngine interface.
+
+TextStorageEngine -> BinaryColumnStoreEngine (future)
+
+2.  Column-Oriented Processing
+
+Queries should read only necessary columns.
+
+Example:
+
+SELECT name FROM users
+
+Should read only:
+
+name.col
+
+3.  Modular Packages
+
+Recommended Java package structure:
+
+cdb/
+
+client/ CLIClient.java
+
+api/ DatabaseAPI.java
+
+query/ QueryEngine.java QueryParser.java querytypes/
+
+ddl/ SchemaManager.java TableSchema.java ColumnSchema.java
+
+storage/ StorageEngine.java TextStorageEngine.java
+
+util/ FileUtils.java
+
+File Structure Example
+
+cdb_data/
+
+metadata/ users.schema
+
+tables/ users/ id.col name.col age.col
+
+Constraint Implementation
+
+Primary Key Check column file for duplicates.
+
+NOT NULL Reject null values.
+
+UNIQUE Scan column for duplicates.
+
+Future Compatibility with C++ Engine
+
+BinaryColumnStoreEngine implements StorageEngine.
+
+This may later call JNI bindings to C++ code.
+
+Possible future features: - compressed column files - indexing - block
+storage - vectorized scans
+
+QueryEngine must never directly read files.
+
+Deliverables
+
+-   Working CLI database
+-   Modular architecture
+-   Text-based column storage
+-   Schema metadata files
+-   Query parser
+-   CRUD operations
+-   Constraint enforcement
+-   Pluggable storage engine
+
+Optional Enhancements
+
+-   simple column indexes
+-   basic query optimizer
+-   batch inserts
+-   transaction logs
