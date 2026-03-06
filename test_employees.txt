@@ -1,0 +1,5 @@
+SELECT name, department, salary FROM employees
+SELECT name, department, salary FROM employees WHERE salary > 65000
+UPDATE employees SET salary=75000 WHERE name = Bob
+SELECT name, department, salary FROM employees
+EXIT

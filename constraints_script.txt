@@ -1,0 +1,13 @@
+CREATE TABLE pk_demo (id INT PRIMARY_KEY, name STRING)
+INSERT INTO pk_demo VALUES (1, "Alice")
+INSERT INTO pk_demo VALUES (1, "Bob")
+
+CREATE TABLE unique_demo (id INT, email STRING UNIQUE)
+INSERT INTO unique_demo VALUES (1, "alice@example.com")
+INSERT INTO unique_demo VALUES (2, "alice@example.com")
+
+CREATE TABLE notnull_demo (id INT, username STRING NOT_NULL)
+INSERT INTO notnull_demo VALUES (1, "alice")
+INSERT INTO notnull_demo VALUES (2, null)
+
+EXIT
