@@ -1,0 +1,1 @@
+TABLE orders COLUMN id INT PRIMARY_KEY COLUMN product_id INT COLUMN quantity INT
