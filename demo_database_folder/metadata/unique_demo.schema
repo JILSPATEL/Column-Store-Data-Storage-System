@@ -1,1 +1,0 @@
-TABLE unique_demo COLUMN id INT COLUMN email STRING UNIQUE
