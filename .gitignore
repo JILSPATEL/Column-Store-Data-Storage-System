@@ -1,4 +1,5 @@
 *.class
+databases/
 cdb_data/
 demo_database_folder/
 my_test_db/
