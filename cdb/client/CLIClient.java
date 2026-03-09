@@ -40,7 +40,7 @@ public class CLIClient {
                 File[] dirs = root.listFiles(File::isDirectory);
                 if (dirs == null || dirs.length == 0) {
                     System.out.println("No databases found.");
-                    System.out.println("Hint: use CREATE DATABASE <name> to create one.");
+                    //System.out.println("Hint: use CREATE DATABASE <name> to create one.");
                 } else {
                     System.out.println("+--------------------------+");
                     System.out.println("| Databases                |");
