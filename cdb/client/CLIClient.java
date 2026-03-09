@@ -69,7 +69,7 @@ public class CLIClient {
                 } else {
                     dbDir.mkdirs();
                     System.out.println("Database '" + dbName + "' created successfully.");
-                    System.out.println("Hint: type  USE DATABASE " + dbName + "  to start using it.");
+                    //System.out.println("Hint: type  USE DATABASE " + dbName + "  to start using it.");
                 }
                 System.out.println();
                 continue;
@@ -86,7 +86,7 @@ public class CLIClient {
                 File dbDir = new File(DATABASES_ROOT + "/" + dbName);
                 if (!dbDir.exists()) {
                     System.out.println("Error: Database '" + dbName + "' does not exist.");
-                    System.out.println("Hint:  CREATE DATABASE " + dbName);
+                    //System.out.println("Hint:  CREATE DATABASE " + dbName);
                 } else {
                     db = new DatabaseAPI(DATABASES_ROOT + "/" + dbName);
                     currentDB = dbName;
@@ -99,7 +99,7 @@ public class CLIClient {
             // ── SQL commands ──────────────────────────────────────────────
             if (db == null) {
                 System.out.println("No database selected.");
-                System.out.println("Hint: SHOW DATABASES  or  USE DATABASE <name>");
+                //System.out.println("Hint: SHOW DATABASES  or  USE DATABASE <name>");
                 System.out.println();
                 continue;
             }
