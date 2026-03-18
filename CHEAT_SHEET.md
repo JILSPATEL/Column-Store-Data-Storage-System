@@ -35,13 +35,13 @@ USE DATABASE <name>             -- switch to a database
 CDB > SHOW DATABASES
 → No databases found.
 
-CDB > CREATE DATABASE university
-→ Database 'university' created successfully.
+CDB > CREATE DATABASE emp
+→ Database 'emp' created successfully.
 
-CDB > USE DATABASE university
-→ Switched to database 'university'.
+CDB > USE DATABASE emp
+→ Switched to database 'emp'.
 
-CDB [university] >             ← prompt shows active database
+CDB [emp] >             ← prompt shows active database
 ```
 
 ---
@@ -55,7 +55,7 @@ CDB [university] >             ← prompt shows active database
 CREATE TABLE <name> (<col> <TYPE> [CONSTRAINT], ...)
 ```
 ```sql
-CREATE TABLE users (id INT PRIMARY_KEY, name STRING, age INT)
+CREATE TABLE employee (id INT PRIMARY_KEY, name STRING, age INT)
 ```
 **Types:** `INT`, `STRING` | **Constraints:** `PRIMARY_KEY`, `NOT_NULL`, `UNIQUE`
 
@@ -63,8 +63,8 @@ CREATE TABLE users (id INT PRIMARY_KEY, name STRING, age INT)
 
 ### INSERT
 ```sql
-INSERT INTO users VALUES (1, "Alice", 25)
-INSERT INTO users VALUES (2, "Bob", 30)
+INSERT INTO employee VALUES (8, "deep", 25)
+INSERT INTO employee VALUES (9, "Bob", 30)
 ```
 
 ---
@@ -75,9 +75,9 @@ SELECT <col1>, <col2> FROM <table>
 SELECT <col1>, <col2> FROM <table> WHERE <col> <op> <value>
 ```
 ```sql
-SELECT name, age FROM users
-SELECT name, age FROM users WHERE age > 20
-SELECT name, age FROM users WHERE id = 1
+SELECT name, age FROM employee
+SELECT name, age FROM employee WHERE age > 20
+SELECT name, age FROM employee WHERE id = 1
 ```
 **WHERE operators:** `=`, `>`, `<`
 
@@ -85,14 +85,14 @@ SELECT name, age FROM users WHERE id = 1
 
 ### UPDATE
 ```sql
-UPDATE users SET age=35 WHERE id=1
+UPDATE employee SET age=35 WHERE id=1
 ```
 
 ---
 
 ### DELETE
 ```sql
-DELETE FROM users WHERE id=3
+DELETE FROM employee WHERE id=3
 ```
 
 ---
@@ -109,7 +109,7 @@ QUIT
 
 ```
 databases/
-└── university/               ← one folder per database
+└── emp/               ← one folder per database
     ├── metadata/
     │   └── users.schema      ← table structure
     └── tables/
