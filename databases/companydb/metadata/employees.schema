@@ -1,0 +1,1 @@
+TABLE employees COLUMN id INT PRIMARY_KEY COLUMN dept_id BYTE COLUMN office_room SHORT COLUMN salary INT COLUMN phone_number LONG

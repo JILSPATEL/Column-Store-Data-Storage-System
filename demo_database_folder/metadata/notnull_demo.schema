@@ -1,1 +1,0 @@
-TABLE notnull_demo COLUMN id INT COLUMN username STRING NOT_NULL

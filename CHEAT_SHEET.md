@@ -55,16 +55,20 @@ CDB [emp] >             ← prompt shows active database
 CREATE TABLE <name> (<col> <TYPE> [CONSTRAINT], ...)
 ```
 ```sql
-CREATE TABLE employee (id INT PRIMARY_KEY, name STRING, age INT)
+CREATE TABLE integers (id INT PRIMARY_KEY, byte_col BYTE, short_col SHORT, long_col LONG)
+CREATE TABLE decimals (id INT PRIMARY_KEY, float_col FLOAT, double_col DOUBLE, big_col BIGDECIMAL)
+CREATE TABLE mixed (id INT PRIMARY_KEY, score DOUBLE, active BOOLEAN)
 ```
-**Types:** `INT`, `STRING` | **Constraints:** `PRIMARY_KEY`, `NOT_NULL`, `UNIQUE`
+**Numeric Types:** `BYTE`, `SHORT`, `INT`, `LONG`, `FLOAT`, `DOUBLE`, `BOOLEAN`, `BIGDECIMAL`  
+*(Note: String/text data is not supported in the current Binary Engine)*  
+**Constraints:** `PRIMARY_KEY`, `NOT_NULL`, `UNIQUE`
 
 ---
 
 ### INSERT
 ```sql
-INSERT INTO employee VALUES (8, "deep", 25)
-INSERT INTO employee VALUES (9, "Bob", 30)
+INSERT INTO integers VALUES (1, 127, 32767, 9223372036854775807)
+INSERT INTO mixed VALUES (2, 99.5, true)
 ```
 
 ---
@@ -75,9 +79,9 @@ SELECT <col1>, <col2> FROM <table>
 SELECT <col1>, <col2> FROM <table> WHERE <col> <op> <value>
 ```
 ```sql
-SELECT name, age FROM employee
-SELECT name, age FROM employee WHERE age > 20
-SELECT name, age FROM employee WHERE id = 1
+SELECT id, long_col FROM integers
+SELECT id, score FROM mixed WHERE score > 50.0
+SELECT id, score FROM mixed WHERE active = true
 ```
 **WHERE operators:** `=`, `>`, `<`
 
@@ -85,14 +89,14 @@ SELECT name, age FROM employee WHERE id = 1
 
 ### UPDATE
 ```sql
-UPDATE employee SET age=35 WHERE id=1
+UPDATE mixed SET score=100.0 WHERE id=2
 ```
 
 ---
 
 ### DELETE
 ```sql
-DELETE FROM employee WHERE id=3
+DELETE FROM mixed WHERE id=2
 ```
 
 ---
@@ -105,40 +109,37 @@ QUIT
 
 ---
 
-## 5. WHERE DATA IS STORED
+## 5. WHERE DATA IS STORED (BINARY ENGINE)
 
 ```
 databases/
-└── emp/               ← one folder per database
+└── numericdb/         ← one folder per database
     ├── metadata/
-    │   └── users.schema      ← table structure
+    │   └── mixed.schema      ← table structure (text definition)
     └── tables/
-        └── users/
-            ├── id.col        ← one value per line
-            ├── name.col
-            └── age.col
+        └── mixed/
+            ├── id.bin       ← one binary column file per column
+            ├── score.bin
+            └── active.bin
 ```
 
-Each `.col` file = one column. Same line number across all files = same row.
+Data is stored in **fixed-width binary format** (`.bin` files):
+- 8-byte global header (type tag + record count).
+- Fixed-width records (1 byte tombstone flag + raw value bytes).
+- Live rows have a `0x00` flag, deleted rows skip over a `0xFF` flag.
+- Enables O(1) in-place byte overwriting for `UPDATE` operations.
 
 ---
 
-## 6. DEMO DATABASE (pre-existing data)
+## 6. DEMO SCRIPT
 
-The `demo_database_folder/` at the project root is a legacy demo folder.
-To use it, copy it into `databases/` first:
+A standalone demo is included to quickly seed and test the system:
 
 ```powershell
-Copy-Item -Recurse demo_database_folder databases\demo
+javac -encoding UTF-8 -cp . BinaryStorageDemo.java
+java -cp . BinaryStorageDemo
 ```
-
-Then inside CDB:
-```sql
-USE DATABASE demo
-SELECT id, name FROM pk_demo
-SELECT email FROM unique_demo
-SELECT id, username FROM notnull_demo
-```
+This generates `databases/numericdb` with populated sample data.
 
 ---
 

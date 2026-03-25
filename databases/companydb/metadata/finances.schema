@@ -1,0 +1,1 @@
+TABLE finances COLUMN id INT PRIMARY_KEY COLUMN tax_rate FLOAT COLUMN bonus_multiplier DOUBLE COLUMN annual_revenue BIGDECIMAL

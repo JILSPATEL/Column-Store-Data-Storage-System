@@ -5,7 +5,7 @@ import cdb.query.QueryEngine;
 import cdb.query.QueryParser;
 import cdb.query.querytypes.Query;
 import cdb.storage.StorageEngine;
-import cdb.storage.TextStorageEngine;
+import cdb.storage.BinaryStorageEngine;
 
 public class DatabaseAPI {
     private SchemaManager schemaManager;
@@ -15,7 +15,7 @@ public class DatabaseAPI {
 
     public DatabaseAPI(String dataDir) {
         this.schemaManager = new SchemaManager(dataDir);
-        this.storageEngine = new TextStorageEngine(dataDir);
+        this.storageEngine = new BinaryStorageEngine(dataDir);
         this.queryParser = new QueryParser();
         this.queryEngine = new QueryEngine(this.schemaManager, this.storageEngine);
     }
