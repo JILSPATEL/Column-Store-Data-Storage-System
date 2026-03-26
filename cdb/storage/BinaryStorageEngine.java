@@ -45,7 +45,7 @@ import java.util.List;
  */
 public class BinaryStorageEngine implements StorageEngine {
 
-    // ── Type tags ────────────────────────────────────────────────────────────
+    // Type tags 
     private static final int TYPE_BYTE       = 1;
     private static final int TYPE_SHORT      = 2;
     private static final int TYPE_INT        = 3;
@@ -55,11 +55,11 @@ public class BinaryStorageEngine implements StorageEngine {
     private static final int TYPE_BOOLEAN    = 7;
     private static final int TYPE_BIGDECIMAL = 8;
 
-    // ── Tombstone constants ───────────────────────────────────────────────────
+    // Tombstone constants
     private static final byte ALIVE    = 0x00;
     private static final byte DELETED  = (byte) 0xFF;
 
-    // ── File layout constants ─────────────────────────────────────────────────
+    // File layout constants
     private static final int HEADER_SIZE = 8;  // 4B type tag + 4B record count
 
     private final String tablesDir;
@@ -69,15 +69,13 @@ public class BinaryStorageEngine implements StorageEngine {
         FileUtils.ensureDirectory(this.tablesDir);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
-    // ─────────────────────────────────────────────────────────────────────────
-
+    
     private String getColumnPath(String table, String column) {
         return tablesDir + "/" + table + "/" + column + ".bin";
     }
 
-    /** Map a SQL type keyword (case-insensitive) to its integer tag. */
+    // Map a SQL type keyword to its integer tag. 
     private int typeTag(String sqlType) {
         switch (sqlType.toUpperCase()) {
             case "BYTE":       return TYPE_BYTE;
@@ -102,7 +100,7 @@ public class BinaryStorageEngine implements StorageEngine {
         }
     }
 
-    /** Returns the byte-width of a single value (excluding the tombstone flag). */
+    // Returns the byte-width of a single value (excluding the tombstone flag). 
     private int valueWidth(int tag) {
         switch (tag) {
             case TYPE_BYTE:       return 1;
@@ -117,7 +115,7 @@ public class BinaryStorageEngine implements StorageEngine {
         }
     }
 
-    /** Full byte-width of one record on disk (tombstone + value). */
+    // Full byte-width of one record on disk (tombstone + value). 
     private int recordWidth(int tag) {
         return 1 + valueWidth(tag);
     }
@@ -132,9 +130,8 @@ public class BinaryStorageEngine implements StorageEngine {
         }
     }
 
-    /**
-     * Atomically increment the record count stored in the header.
-     */
+    // Atomically increment the record count stored in the header.
+    
     private void incrementRecordCount(String path) throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(path, "rw")) {
             raf.seek(4);                       // byte offset of record count
@@ -143,23 +140,18 @@ public class BinaryStorageEngine implements StorageEngine {
             raf.writeInt(count + 1);
         }
     }
-
-    /**
-     * Byte offset in the file where record at physical index `physicalIndex` starts.
-     * Physical index counts ALL records (live + tombstoned) starting from 0.
-     */
+ 
+    // Byte offset in the file where record at physical index `physicalIndex` starts.
+    // Physical index counts ALL records (live + tombstoned) starting from 0.
+    
     private long recordOffset(int tag, int physicalIndex) {
         return HEADER_SIZE + (long) physicalIndex * recordWidth(tag);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     // Encoding / Decoding
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Encode a String value into its binary representation for the given type tag.
-     * Returns exactly valueWidth(tag) bytes.
-     */
+    // Encode a String value into its binary representation for the given type tag.
+    // Returns exactly valueWidth(tag) bytes.
+    
     private byte[] encode(int tag, String value) throws IOException {
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(baos);
@@ -207,9 +199,8 @@ public class BinaryStorageEngine implements StorageEngine {
         return baos.toByteArray();
     }
 
-    /**
-     * Decode bytes at the current position in a DataInputStream to a String.
-     */
+    // Decode bytes at the current position in a DataInputStream to a String.
+    
     private String decode(int tag, DataInputStream dis) throws IOException {
         switch (tag) {
             case TYPE_BYTE:
@@ -238,9 +229,9 @@ public class BinaryStorageEngine implements StorageEngine {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // StorageEngine interface
-    // ─────────────────────────────────────────────────────────────────────────
+    // ────────────────────────
+    // StorageEngine interface 
+    // ────────────────────────
 
     @Override
     public void createTable(TableSchema schema) throws IOException {
@@ -310,10 +301,9 @@ public class BinaryStorageEngine implements StorageEngine {
         return results;
     }
 
-    /**
-     * Find the physical (file-level) index of the Nth live record.
-     * Returns -1 if not found.
-     */
+    // Find the physical (file-level) index of the Nth live record.
+    // Returns -1 if not found.
+
     private int findPhysicalIndex(String path, int liveRowIndex) throws IOException {
         try (DataInputStream dis = new DataInputStream(new FileInputStream(path))) {
             int tag   = dis.readInt();
