@@ -3,9 +3,7 @@ package cdb.query;
 import cdb.ddl.ColumnSchema;
 import cdb.ddl.TableSchema;
 import cdb.query.querytypes.*;
-
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

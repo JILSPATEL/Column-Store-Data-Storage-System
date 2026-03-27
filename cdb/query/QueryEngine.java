@@ -164,8 +164,8 @@ public class QueryEngine {
 
     private boolean evaluateCondition(String val1, String op, String val2) {
         try {
-            int num1 = Integer.parseInt(val1.trim());
-            int num2 = Integer.parseInt(val2.trim());
+            double num1 = Double.parseDouble(val1.trim());
+            double num2 = Double.parseDouble(val2.trim());
             switch (op) {
                 case "=":
                     return num1 == num2;
