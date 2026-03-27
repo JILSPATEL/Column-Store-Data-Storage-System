@@ -12,9 +12,8 @@ public class CLIClient {
     public static void main(String[] args) {
         // Ensure the root databases folder exists
         File root = new File(DATABASES_ROOT);
-        if (!root.exists()) root.mkdirs();
-
-
+        if (!root.exists())
+            root.mkdirs();
 
         DatabaseAPI db = null;
         String currentDB = null;
@@ -25,10 +24,12 @@ public class CLIClient {
             String prompt = (currentDB != null) ? "CDB [" + currentDB + "] > " : "CDB > ";
             System.out.print(prompt);
 
-            if (!scanner.hasNextLine()) break;
+            if (!scanner.hasNextLine())
+                break;
 
             String line = scanner.nextLine().trim();
-            if (line.isEmpty()) continue;
+            if (line.isEmpty())
+                continue;
 
             // ── EXIT ──────────────────────────────────────────────────────
             if (line.equalsIgnoreCase("EXIT") || line.equalsIgnoreCase("QUIT")) {
@@ -40,7 +41,7 @@ public class CLIClient {
                 File[] dirs = root.listFiles(File::isDirectory);
                 if (dirs == null || dirs.length == 0) {
                     System.out.println("No databases found.");
-                    //System.out.println("Hint: use CREATE DATABASE <name> to create one.");
+                    // System.out.println("Hint: use CREATE DATABASE <name> to create one.");
                 } else {
                     System.out.println("+--------------------------+");
                     System.out.println("| Databases                |");
@@ -50,6 +51,29 @@ public class CLIClient {
                         System.out.printf("| %-24s|%s%n", dir.getName(), marker);
                     }
                     System.out.println("+--------------------------+");
+                }
+                System.out.println();
+                continue;
+            }
+
+            // ── SHOW TABLES ───────────────────────────────────────────────
+            if (line.equalsIgnoreCase("SHOW TABLES")) {
+                if (currentDB == null) {
+                    System.out.println("No database selected. Use: USE DATABASE <name>");
+                } else {
+                    File tablesDir = new File(DATABASES_ROOT + "/" + currentDB + "/tables");
+                    File[] tables = tablesDir.exists() ? tablesDir.listFiles(File::isDirectory) : null;
+                    if (tables == null || tables.length == 0) {
+                        System.out.println("No tables found in database '" + currentDB + "'.");
+                    } else {
+                        System.out.println("+--------------------------+");
+                        System.out.println("| Tables                   |");
+                        System.out.println("+--------------------------+");
+                        for (File t : tables) {
+                            System.out.printf("| %-24s|%n", t.getName());
+                        }
+                        System.out.println("+--------------------------+");
+                    }
                 }
                 System.out.println();
                 continue;
@@ -69,7 +93,8 @@ public class CLIClient {
                 } else {
                     dbDir.mkdirs();
                     System.out.println("Database '" + dbName + "' created successfully.");
-                    //System.out.println("Hint: type  USE DATABASE " + dbName + "  to start using it.");
+                    // System.out.println("Hint: type USE DATABASE " + dbName + " to start using
+                    // it.");
                 }
                 System.out.println();
                 continue;
@@ -86,7 +111,7 @@ public class CLIClient {
                 File dbDir = new File(DATABASES_ROOT + "/" + dbName);
                 if (!dbDir.exists()) {
                     System.out.println("Error: Database '" + dbName + "' does not exist.");
-                    //System.out.println("Hint:  CREATE DATABASE " + dbName);
+                    // System.out.println("Hint: CREATE DATABASE " + dbName);
                 } else {
                     db = new DatabaseAPI(DATABASES_ROOT + "/" + dbName);
                     currentDB = dbName;
@@ -99,7 +124,7 @@ public class CLIClient {
             // ── SQL commands ──────────────────────────────────────────────
             if (db == null) {
                 System.out.println("No database selected.");
-                //System.out.println("Hint: SHOW DATABASES  or  USE DATABASE <name>");
+                // System.out.println("Hint: SHOW DATABASES or USE DATABASE <name>");
                 System.out.println();
                 continue;
             }

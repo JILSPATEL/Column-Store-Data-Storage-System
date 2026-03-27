@@ -82,6 +82,13 @@ public class QueryEngine {
         if (schema == null)
             throw new IllegalArgumentException("Table not found: " + q.getTableName());
 
+        // Validate columns
+        for (String colName : q.getColumns()) {
+            if (schema.getColumn(colName) == null) {
+                throw new IllegalArgumentException("Column not found: " + colName);
+            }
+        }
+
         List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getFilterColumn(),
                 q.getFilterOp(), q.getFilterValue());
 
@@ -110,6 +117,10 @@ public class QueryEngine {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
             throw new IllegalArgumentException("Table not found: " + q.getTableName());
+
+        if (schema.getColumn(q.getSetColumn()) == null) {
+            throw new IllegalArgumentException("Column not found: " + q.getSetColumn());
+        }
 
         List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getFilterColumn(),
                 q.getFilterOp(), q.getFilterValue());
@@ -152,6 +163,10 @@ public class QueryEngine {
             return indexes;
         }
 
+        if (filterCol != null && schema.getColumn(filterCol) == null) {
+            throw new IllegalArgumentException("Filter column not found: " + filterCol);
+        }
+
         List<String> colData = storageEngine.readColumn(tableName, filterCol);
         for (int i = 0; i < colData.size(); i++) {
             String val = colData.get(i);
@@ -164,8 +179,10 @@ public class QueryEngine {
 
     private boolean evaluateCondition(String val1, String op, String val2) {
         try {
-            double num1 = Double.parseDouble(val1.trim());
-            double num2 = Double.parseDouble(val2.trim());
+            String v1 = normalizeBoolean(val1);
+            String v2 = normalizeBoolean(val2);
+            double num1 = Double.parseDouble(v1.trim());
+            double num2 = Double.parseDouble(v2.trim());
             switch (op) {
                 case "=":
                     return num1 == num2;
@@ -181,5 +198,14 @@ public class QueryEngine {
             }
         }
         return false;
+    }
+
+    private String normalizeBoolean(String val) {
+        String s = val.trim().toLowerCase();
+        if (s.equals("true"))
+            return "1";
+        if (s.equals("false"))
+            return "0";
+        return s;
     }
 }
