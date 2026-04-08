@@ -38,16 +38,30 @@ public class BitmapIndexManager {
 
         for (ColumnSchema col : schema.getColumns()) {
             String colName = col.getName();
-            Map<String, BitSet> colIndex = new HashMap<>();
             
             List<String> values = storageEngine.readColumn(tableName, colName);
             rowCount = values.size(); // All columns have same active rows
             
-            for (int i = 0; i < values.size(); i++) {
-                String val = values.get(i);
-                colIndex.computeIfAbsent(val, k -> new BitSet()).set(i);
+            Set<String> uniqueVals = new HashSet<>(values);
+            long distinctCount = uniqueVals.size();
+            
+            boolean buildIndex = true;
+            if (distinctCount > 1000) {
+               buildIndex = false;
+            } else if (rowCount >= 1000 && (double) distinctCount / rowCount > 0.05) {
+               buildIndex = false;
             }
-            tableIndexes.put(colName, colIndex);
+            
+            if (buildIndex) {
+                Map<String, BitSet> colIndex = new HashMap<>();
+                for (int i = 0; i < values.size(); i++) {
+                    String val = values.get(i);
+                    colIndex.computeIfAbsent(val, k -> new BitSet()).set(i);
+                }
+                tableIndexes.put(colName, colIndex);
+            } else {
+                System.out.println("[Bitmap Index] Skipped index creation for " + tableName + "." + colName + " (High Cardinality: " + distinctCount + " unique / " + rowCount + " rows)");
+            }
         }
 
         indexes.put(tableName, tableIndexes);
@@ -61,10 +75,19 @@ public class BitmapIndexManager {
 
         for (int i = 0; i < schema.getColumns().size(); i++) {
             String colName = schema.getColumns().get(i).getName();
-            String val = values.get(i);
             
-            Map<String, BitSet> colIndex = tableIndexes.computeIfAbsent(colName, k -> new HashMap<>());
+            if (!tableIndexes.containsKey(colName)) continue;
+            
+            String val = values.get(i);
+            Map<String, BitSet> colIndex = tableIndexes.get(colName);
             colIndex.computeIfAbsent(val, k -> new BitSet()).set(newIdx);
+            
+            int distinctCount = colIndex.size();
+            int totalRows = newIdx + 1;
+            if (distinctCount > 1000 || (totalRows >= 1000 && (double) distinctCount / totalRows > 0.05)) {
+                tableIndexes.remove(colName);
+                System.out.println("[Bitmap Index] Dynamically dropped index for " + tableName + "." + colName + " (Exceeded cardinality threshold)");
+            }
         }
         
         tableRowCounts.put(tableName, newIdx + 1);
@@ -83,6 +106,13 @@ public class BitmapIndexManager {
             }
             // Set new value
             colIndex.computeIfAbsent(newValue, k -> new BitSet()).set(rowIndex);
+            
+            int distinctCount = colIndex.size();
+            int totalRows = tableRowCounts.get(tableName);
+            if (distinctCount > 1000 || (totalRows >= 1000 && (double) distinctCount / totalRows > 0.05)) {
+                tableIndexes.remove(colName);
+                System.out.println("[Bitmap Index] Dynamically dropped index for " + tableName + "." + colName + " (Exceeded cardinality threshold)");
+            }
         }
     }
 
@@ -97,7 +127,7 @@ public class BitmapIndexManager {
 
         Map<String, Map<String, BitSet>> tableIndexes = indexes.get(tableName);
         if (tableIndexes == null || !tableIndexes.containsKey(filterCol)) {
-            return new ArrayList<>();
+            return null;
         }
 
         Map<String, BitSet> colIndex = tableIndexes.get(filterCol);

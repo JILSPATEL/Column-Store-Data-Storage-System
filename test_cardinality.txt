@@ -1,0 +1,21 @@
+CREATE DATABASE cardinality_test
+USE DATABASE cardinality_test
+CREATE TABLE logs (id INT PRIMARY_KEY, severity DOUBLE)
+INSERT INTO logs VALUES ('1', '1.0')
+INSERT INTO logs VALUES ('2', '1.0')
+INSERT INTO logs VALUES ('3', '2.0')
+INSERT INTO logs VALUES ('4', '2.0')
+INSERT INTO logs VALUES ('5', '1.0')
+INSERT INTO logs VALUES ('6', '3.0')
+INSERT INTO logs VALUES ('7', '3.0')
+INSERT INTO logs VALUES ('8', '1.0')
+INSERT INTO logs VALUES ('9', '1.0')
+INSERT INTO logs VALUES ('10', '2.0')
+INSERT INTO logs VALUES ('11', '1.0')
+INSERT INTO logs VALUES ('12', '1.0')
+
+SELECT id, severity FROM logs WHERE id = 11
+SELECT id, severity FROM logs WHERE severity = 1.0
+
+SHOW BITMAP INDEX logs
+EXIT

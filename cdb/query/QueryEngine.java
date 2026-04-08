@@ -167,7 +167,21 @@ public class QueryEngine {
             throw new IllegalArgumentException("Filter column not found: " + filterCol);
         }
 
-        return indexManager.getFilteredRowIndexes(tableName, schema, filterCol, filterOp, filterVal);
+        List<Integer> validRowIndexes = indexManager.getFilteredRowIndexes(tableName, schema, filterCol, filterOp, filterVal);
+        
+        if (validRowIndexes == null) {
+            // Sequential scan fallback
+            validRowIndexes = new ArrayList<>();
+            List<String> filterColData = storageEngine.readColumn(tableName, filterCol);
+            for (int i = 0; i < filterColData.size(); i++) {
+                if (evaluateCondition(filterColData.get(i), filterOp, filterVal)) {
+                    validRowIndexes.add(i);
+                }
+            }
+            System.out.println("[Sequential Scan] Used full scan for " + tableName + "." + filterCol + ", matched " + validRowIndexes.size() + " logical row(s).");
+        }
+        
+        return validRowIndexes;
     }
 
     private boolean evaluateCondition(String val1, String op, String val2) {
