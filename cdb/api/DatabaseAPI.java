@@ -38,4 +38,7 @@ public class DatabaseAPI {
             return "Execution Error: " + e.getMessage();
         }
     }
+    public String dumpIndex(String tableName) {
+        return indexManager.dumpIndex(tableName);
+    }
 }

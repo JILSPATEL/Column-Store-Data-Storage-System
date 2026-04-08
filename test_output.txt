@@ -1,0 +1,26 @@
+CDB > Database 'bittestdb' already exists.
+
+CDB > Switched to database 'bittestdb'.
+
+CDB [bittestdb] > Table sensors created successfully.
+CDB [bittestdb] > 1 row inserted.
+CDB [bittestdb] > 1 row inserted.
+CDB [bittestdb] > 1 row inserted.
+CDB [bittestdb] > Bitmap Index for table 'sensors':
+  Column: temp
+    Value '26.0': 010010 {1, 4}
+    Value '24.1': 001001 {2, 5}
+    Value '25.5': 100100 {0, 3}
+  Column: is_active
+    Value 'false': 001001 {2, 5}
+    Value 'true': 110110 {0, 1, 3, 4}
+  Column: humidity
+    Value '58.5': 010010 {1, 4}
+    Value '60.0': 100100 {0, 3}
+    Value '62.0': 001001 {2, 5}
+  Column: id
+    Value '1': 100100 {0, 3}
+    Value '2': 010010 {1, 4}
+    Value '3': 001001 {2, 5}
+
+CDB [bittestdb] > Goodbye.

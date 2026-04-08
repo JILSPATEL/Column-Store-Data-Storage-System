@@ -149,4 +149,30 @@ public class BitmapIndexManager {
         if (s.equals("false")) return "0";
         return s;
     }
+    public String dumpIndex(String tableName) {
+        Map<String, Map<String, BitSet>> tableIndexes = indexes.get(tableName);
+        if (tableIndexes == null || tableIndexes.isEmpty()) {
+            return "No bitmap index found for table '" + tableName + "'.";
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("Bitmap Index for table '").append(tableName).append("':\n");
+        int maxRows = tableRowCounts.getOrDefault(tableName, 0);
+        
+        for (Map.Entry<String, Map<String, BitSet>> colEntry : tableIndexes.entrySet()) {
+            String colName = colEntry.getKey();
+            sb.append("  Column: ").append(colName).append("\n");
+            for (Map.Entry<String, BitSet> valEntry : colEntry.getValue().entrySet()) {
+                String val = valEntry.getKey();
+                BitSet bs = valEntry.getValue();
+                
+                StringBuilder bits = new StringBuilder();
+                for (int i = 0; i < maxRows; i++) {
+                    bits.append(bs.get(i) ? "1" : "0");
+                }
+                sb.append("    Value '").append(val).append("': ").append(bits.toString()).append(" ").append(bs.toString()).append("\n");
+            }
+        }
+        return sb.toString().trim();
+    }
 }

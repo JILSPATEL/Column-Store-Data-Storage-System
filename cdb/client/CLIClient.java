@@ -79,6 +79,22 @@ public class CLIClient {
                 continue;
             }
 
+            // ── SHOW BITMAP INDEX <name> ──────────────────────────────────
+            if (line.toUpperCase().startsWith("SHOW BITMAP INDEX")) {
+                if (db == null) {
+                    System.out.println("No database selected. Use: USE DATABASE <name>");
+                } else {
+                    String tableName = line.substring("SHOW BITMAP INDEX".length()).trim();
+                    if (tableName.isEmpty()) {
+                        System.out.println("Error: Please provide a table name. Example: SHOW BITMAP INDEX <tableName>");
+                    } else {
+                        System.out.println(db.dumpIndex(tableName));
+                    }
+                }
+                System.out.println();
+                continue;
+            }
+
             // ── CREATE DATABASE <name> ────────────────────────────────────
             if (line.toUpperCase().startsWith("CREATE DATABASE ")) {
                 String dbName = line.substring("CREATE DATABASE ".length()).trim();

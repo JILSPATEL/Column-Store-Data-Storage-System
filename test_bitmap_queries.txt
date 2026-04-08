@@ -1,0 +1,8 @@
+CREATE DATABASE bittestdb
+USE DATABASE bittestdb
+CREATE TABLE sensors (id INT PRIMARY_KEY, temp DOUBLE, humidity DOUBLE, is_active BOOLEAN)
+INSERT INTO sensors VALUES ('1', '25.5', '60.0', 'true')
+INSERT INTO sensors VALUES ('2', '26.0', '58.5', 'true')
+INSERT INTO sensors VALUES ('3', '24.1', '62.0', 'false')
+SHOW BITMAP INDEX sensors
+EXIT
