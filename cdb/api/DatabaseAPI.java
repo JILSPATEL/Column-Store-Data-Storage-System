@@ -6,18 +6,28 @@ import cdb.query.QueryParser;
 import cdb.query.querytypes.Query;
 import cdb.storage.StorageEngine;
 import cdb.storage.BinaryStorageEngine;
+import cdb.query.BitmapIndexManager;
 
 public class DatabaseAPI {
     private SchemaManager schemaManager;
     private StorageEngine storageEngine;
     private QueryParser queryParser;
     private QueryEngine queryEngine;
+    private BitmapIndexManager indexManager;
 
     public DatabaseAPI(String dataDir) {
         this.schemaManager = new SchemaManager(dataDir);
         this.storageEngine = new BinaryStorageEngine(dataDir);
         this.queryParser = new QueryParser();
-        this.queryEngine = new QueryEngine(this.schemaManager, this.storageEngine);
+        
+        this.indexManager = new BitmapIndexManager(this.storageEngine, this.schemaManager);
+        try {
+            this.indexManager.initializeAll();
+        } catch(java.io.IOException e) {
+            System.err.println("Failed to initialize indexes: " + e.getMessage());
+        }
+        
+        this.queryEngine = new QueryEngine(this.schemaManager, this.storageEngine, this.indexManager);
     }
 
     public String execute(String queryString) {

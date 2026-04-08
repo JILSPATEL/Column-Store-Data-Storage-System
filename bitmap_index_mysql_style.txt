@@ -1,0 +1,181 @@
+Implement Bitmap Index (DBMS-Style, MySQL-Inspired)
+
+This document revises the original bitmap index design to align more closely with how real database systems (like MySQL/InnoDB) manage indexing, row identity, and deletions.
+
+Core Design Change
+------------------
+The major correction is removing dependence on "logical row index shifting".
+
+OLD APPROACH:
+Row identity = position (0,1,2,...)
+→ DELETE causes shifting → requires full rebuild
+
+NEW APPROACH:
+Row identity = stable RowID (does NOT change)
+
+This mirrors real DBMS behavior.
+
+--------------------------------------------------------------------
+
+1. Row Identity Layer (NEW REQUIRED COMPONENT)
+
+Introduce a stable RowID for every row.
+
+- Each row gets a unique, monotonically increasing ID (e.g., long)
+- Stored alongside data OR maintained in a hidden column
+
+Example:
+RowID → Values
+1001 → [A, X, 10]
+1002 → [B, Y, 20]
+1003 → [A, Z, 30]
+
+IMPORTANT:
+RowIDs never change, even if rows are deleted.
+
+--------------------------------------------------------------------
+
+2. Storage Engine Changes
+
+Modify BinaryStorageEngine:
+
+DELETE:
+- Do NOT shift rows
+- Mark row as deleted (soft delete / tombstone)
+- Maintain a "deleted bitmap" or flag
+
+READ:
+- Skip deleted rows dynamically (same as current behavior)
+
+This matches InnoDB’s MVCC + purge model (simplified).
+
+--------------------------------------------------------------------
+
+3. Bitmap Index Structure (UPDATED)
+
+Replace:
+Map<Table → Column → Value → BitSet(index-based)>
+
+With:
+Map<Table → Column → Value → Set<RowID>>   (or BitSet keyed by RowID offset)
+
+Better option:
+- Maintain a mapping: RowID → position (only for storage access)
+- Bitmap uses RowID-based indexing
+
+Example:
+Column: name
+
+"A" → {1001, 1003}
+"B" → {1002}
+
+No dependency on row position.
+
+--------------------------------------------------------------------
+
+4. Index Operations
+
+INSERT:
+- Assign new RowID
+- Add RowID to corresponding value bitmap
+
+UPDATE:
+- Remove RowID from old value set
+- Add RowID to new value set
+
+DELETE:
+- Remove RowID from all relevant bitmaps
+OR
+- Mark as deleted and lazily clean later (optional optimization)
+
+NO FULL REBUILD REQUIRED.
+
+--------------------------------------------------------------------
+
+5. Query Processing
+
+getFilteredRowIndexes becomes:
+
+- Lookup value → get RowID set instantly
+- For range queries (<, >):
+    iterate over keys and union matching sets
+
+Return:
+Set<RowID>
+
+Then:
+Translate RowIDs → physical positions using mapping
+
+--------------------------------------------------------------------
+
+6. QueryEngine Changes
+
+executeSelect:
+- Use BitmapIndexManager → returns RowIDs
+- Fetch rows using RowID mapping
+
+executeInsert:
+- Append row
+- Assign RowID
+- Update index incrementally
+
+executeUpdate:
+- Fetch RowID
+- Update index incrementally
+
+executeDelete:
+- Mark row deleted in storage
+- Remove RowID from index (no rebuild)
+
+--------------------------------------------------------------------
+
+7. Optional: Physical Compaction (Advanced)
+
+Periodically:
+- Remove deleted rows physically
+- Rebuild RowID → position mapping
+
+Indexes remain valid because RowIDs do not change.
+
+--------------------------------------------------------------------
+
+8. In-Memory vs Disk Index
+
+For this project:
+✔ In-memory is acceptable
+
+Real systems:
+- Persist indexes on disk (B+ trees, bitmap segments)
+
+Optional enhancement:
+- Serialize index to .idx file
+
+--------------------------------------------------------------------
+
+9. Complexity Improvements
+
+Operation        Old Design         New Design
+------------------------------------------------
+INSERT           O(1)               O(1)
+UPDATE           O(1)               O(1)
+DELETE           O(n) rebuild       O(1)
+SELECT (=)       O(n) scan          O(1)
+SELECT (<, >)    O(n) scan          O(k) merge
+
+--------------------------------------------------------------------
+
+10. Key Takeaway
+
+The critical improvement is:
+
+"Decouple row identity from physical position"
+
+This eliminates:
+- Logical index shifting
+- Full index rebuilds
+
+And aligns the system with real-world DBMS design principles.
+
+--------------------------------------------------------------------
+
+End of Document

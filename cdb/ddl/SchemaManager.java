@@ -79,4 +79,8 @@ public class SchemaManager {
     public TableSchema getTable(String tableName) {
         return schemas.get(tableName);
     }
+
+    public java.util.Set<String> listTables() {
+        return schemas.keySet();
+    }
 }

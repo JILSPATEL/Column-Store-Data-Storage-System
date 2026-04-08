@@ -5,6 +5,7 @@ cdb/api/DatabaseAPI.java
 cdb/ddl/ColumnSchema.java
 cdb/ddl/SchemaManager.java
 cdb/ddl/TableSchema.java
+cdb/query/BitmapIndexManager.java
 cdb/query/QueryParser.java
 cdb/query/querytypes/InsertQuery.java
 cdb/query/querytypes/UpdateQuery.java

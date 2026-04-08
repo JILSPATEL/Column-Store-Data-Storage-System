@@ -1,1 +1,0 @@
-TABLE finances COLUMN id INT PRIMARY_KEY COLUMN revenue LONG COLUMN expenses LONG COLUMN profit DOUBLE COLUMN quarter INT

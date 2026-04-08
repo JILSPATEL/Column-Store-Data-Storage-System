@@ -13,10 +13,12 @@ import java.util.List;
 public class QueryEngine {
     private SchemaManager schemaManager;
     private StorageEngine storageEngine;
+    private BitmapIndexManager indexManager;
 
-    public QueryEngine(SchemaManager schemaManager, StorageEngine storageEngine) {
+    public QueryEngine(SchemaManager schemaManager, StorageEngine storageEngine, BitmapIndexManager indexManager) {
         this.schemaManager = schemaManager;
         this.storageEngine = storageEngine;
+        this.indexManager = indexManager;
     }
 
     public String execute(Query query) {
@@ -73,6 +75,8 @@ public class QueryEngine {
             ColumnSchema col = schema.getColumns().get(i);
             storageEngine.appendValue(q.getTableName(), col.getName(), q.getValues().get(i));
         }
+        
+        indexManager.insertRow(q.getTableName(), schema, q.getValues());
 
         return "1 row inserted.";
     }
@@ -125,8 +129,12 @@ public class QueryEngine {
         List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getFilterColumn(),
                 q.getFilterOp(), q.getFilterValue());
 
+        List<String> currentValues = storageEngine.readColumn(q.getTableName(), q.getSetColumn());
+        
         for (int idx : validRowIndexes) {
+            String oldValue = currentValues.get(idx);
             storageEngine.updateValue(q.getTableName(), q.getSetColumn(), idx, q.getSetValue());
+            indexManager.updateValue(q.getTableName(), q.getSetColumn(), idx, oldValue, q.getSetValue());
         }
 
         return validRowIndexes.size() + " rows updated.";
@@ -145,36 +153,21 @@ public class QueryEngine {
             int idx = validRowIndexes.get(i);
             storageEngine.deleteRow(q.getTableName(), idx);
         }
+        
+        // Rebuild indexing (O(n)) due to logical row shifting
+        indexManager.buildIndex(q.getTableName());
 
         return validRowIndexes.size() + " rows deleted.";
     }
 
     private List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema, String filterCol, String filterOp,
             String filterVal) throws IOException {
-        List<Integer> indexes = new ArrayList<>();
-        if (filterCol == null) {
-            // Assume first column defines number of rows (or checking size of any column)
-            if (!schema.getColumns().isEmpty()) {
-                List<String> colData = storageEngine.readColumn(tableName, schema.getColumns().get(0).getName());
-                for (int i = 0; i < colData.size(); i++) {
-                    indexes.add(i);
-                }
-            }
-            return indexes;
-        }
-
+        
         if (filterCol != null && schema.getColumn(filterCol) == null) {
             throw new IllegalArgumentException("Filter column not found: " + filterCol);
         }
 
-        List<String> colData = storageEngine.readColumn(tableName, filterCol);
-        for (int i = 0; i < colData.size(); i++) {
-            String val = colData.get(i);
-            if (evaluateCondition(val, filterOp, filterVal)) {
-                indexes.add(i);
-            }
-        }
-        return indexes;
+        return indexManager.getFilteredRowIndexes(tableName, schema, filterCol, filterOp, filterVal);
     }
 
     private boolean evaluateCondition(String val1, String op, String val2) {

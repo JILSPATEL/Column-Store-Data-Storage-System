@@ -1,1 +1,0 @@
-TABLE projects COLUMN id INT PRIMARY_KEY COLUMN budget DOUBLE COLUMN team_size LONG COLUMN is_active BOOLEAN
