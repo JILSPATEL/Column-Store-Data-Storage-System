@@ -18,7 +18,7 @@ public class QueryEngine {
     public QueryEngine(SchemaManager schemaManager, StorageEngine storageEngine, BitmapIndexManager indexManager) {
         this.schemaManager = schemaManager;
         this.storageEngine = storageEngine;
-        this.indexManager = indexManager;
+        this.indexManager  = indexManager;
     }
 
     public String execute(Query query) {
@@ -40,12 +40,18 @@ public class QueryEngine {
         return "Unknown query type";
     }
 
+    // -------------------------------------------------------------------------
+    // CREATE
+    // -------------------------------------------------------------------------
     private String executeCreate(CreateTableQuery q) throws IOException {
         schemaManager.createTable(q.getSchema());
         storageEngine.createTable(q.getSchema());
         return "Table " + q.getSchema().getTableName() + " created successfully.";
     }
 
+    // -------------------------------------------------------------------------
+    // INSERT
+    // -------------------------------------------------------------------------
     private String executeInsert(InsertQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
@@ -54,7 +60,7 @@ public class QueryEngine {
             throw new IllegalArgumentException("Column count doesn't match value count.");
         }
 
-        // Check constraints: PRIMARY_KEY, UNIQUE, NOT_NULL
+        // Enforce constraints: PRIMARY_KEY, UNIQUE, NOT_NULL
         for (int i = 0; i < schema.getColumns().size(); i++) {
             ColumnSchema col = schema.getColumns().get(i);
             String val = q.getValues().get(i);
@@ -75,36 +81,43 @@ public class QueryEngine {
             ColumnSchema col = schema.getColumns().get(i);
             storageEngine.appendValue(q.getTableName(), col.getName(), q.getValues().get(i));
         }
-        
-        indexManager.insertRow(q.getTableName(), schema, q.getValues());
 
+        indexManager.insertRow(q.getTableName(), schema, q.getValues());
         return "1 row inserted.";
     }
 
+    // -------------------------------------------------------------------------
+    // SELECT
+    // -------------------------------------------------------------------------
     private String executeSelect(SelectQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
             throw new IllegalArgumentException("Table not found: " + q.getTableName());
 
-        // Validate columns
-        for (String colName : q.getColumns()) {
+        // Resolve * -> all column names
+        List<String> requestedCols = resolveColumns(q.getColumns(), schema);
+
+        // Validate each requested column
+        for (String colName : requestedCols) {
             if (schema.getColumn(colName) == null) {
                 throw new IllegalArgumentException("Column not found: " + colName);
             }
         }
 
-        List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getFilterColumn(),
-                q.getFilterOp(), q.getFilterValue());
+        // Validate WHERE columns
+        validateWhereClause(q.getWhereClause(), schema);
+
+        List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getWhereClause());
 
         // Read requested columns
         List<List<String>> columnsData = new ArrayList<>();
-        for (String colName : q.getColumns()) {
+        for (String colName : requestedCols) {
             columnsData.add(storageEngine.readColumn(q.getTableName(), colName));
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(String.join("\t", q.getColumns())).append("\n");
-        sb.append("-".repeat(q.getColumns().size() * 10)).append("\n");
+        sb.append(String.join("\t", requestedCols)).append("\n");
+        sb.append("-".repeat(requestedCols.size() * 15)).append("\n");
 
         for (int idx : validRowIndexes) {
             List<String> rowValues = new ArrayList<>();
@@ -117,6 +130,9 @@ public class QueryEngine {
         return sb.toString().trim() + "\n(" + validRowIndexes.size() + " rows)";
     }
 
+    // -------------------------------------------------------------------------
+    // UPDATE
+    // -------------------------------------------------------------------------
     private String executeUpdate(UpdateQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
@@ -126,11 +142,12 @@ public class QueryEngine {
             throw new IllegalArgumentException("Column not found: " + q.getSetColumn());
         }
 
-        List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getFilterColumn(),
-                q.getFilterOp(), q.getFilterValue());
+        validateWhereClause(q.getWhereClause(), schema);
+
+        List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getWhereClause());
 
         List<String> currentValues = storageEngine.readColumn(q.getTableName(), q.getSetColumn());
-        
+
         for (int idx : validRowIndexes) {
             String oldValue = currentValues.get(idx);
             storageEngine.updateValue(q.getTableName(), q.getSetColumn(), idx, q.getSetValue());
@@ -140,79 +157,157 @@ public class QueryEngine {
         return validRowIndexes.size() + " rows updated.";
     }
 
+    // -------------------------------------------------------------------------
+    // DELETE
+    // -------------------------------------------------------------------------
     private String executeDelete(DeleteQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
             throw new IllegalArgumentException("Table not found: " + q.getTableName());
 
-        List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getFilterColumn(),
-                q.getFilterOp(), q.getFilterValue());
+        validateWhereClause(q.getWhereClause(), schema);
 
-        // Delete from bottom to top to preserve indexes
+        List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getWhereClause());
+
+        // Delete from bottom to top to preserve indexes during removal
         for (int i = validRowIndexes.size() - 1; i >= 0; i--) {
             int idx = validRowIndexes.get(i);
             storageEngine.deleteRow(q.getTableName(), idx);
         }
-        
-        // Rebuild indexing (O(n)) due to logical row shifting
+
+        // Rebuild bitmap index (row positions have shifted)
         indexManager.buildIndex(q.getTableName());
 
         return validRowIndexes.size() + " rows deleted.";
     }
 
-    private List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema, String filterCol, String filterOp,
-            String filterVal) throws IOException {
-        
-        if (filterCol != null && schema.getColumn(filterCol) == null) {
-            throw new IllegalArgumentException("Filter column not found: " + filterCol);
+    // -------------------------------------------------------------------------
+    // Core filtering — WhereClause aware
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns the list of row indexes that satisfy the given WhereClause.
+     *
+     * Strategy:
+     *  1. Try the bitmap index (fast path).
+     *  2. If any condition is not indexed, fall back to a sequential scan over
+     *     all conditions using the logical operator (AND / OR).
+     */
+    private List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema,
+                                                WhereClause whereClause) throws IOException {
+
+        // No WHERE clause → return every row
+        if (whereClause == null) {
+            List<Integer> all = indexManager.getFilteredRowIndexes(tableName, schema,
+                    (WhereClause) null);
+            return all;
         }
 
-        List<Integer> validRowIndexes = indexManager.getFilteredRowIndexes(tableName, schema, filterCol, filterOp, filterVal);
-        
-        if (validRowIndexes == null) {
-            // Sequential scan fallback
-            validRowIndexes = new ArrayList<>();
-            List<String> filterColData = storageEngine.readColumn(tableName, filterCol);
-            for (int i = 0; i < filterColData.size(); i++) {
-                if (evaluateCondition(filterColData.get(i), filterOp, filterVal)) {
-                    validRowIndexes.add(i);
+        // Attempt bitmap index path
+        List<Integer> indexed = indexManager.getFilteredRowIndexes(tableName, schema, whereClause);
+        if (indexed != null) {
+            return indexed;
+        }
+
+        // ---- Sequential scan fallback ----
+        boolean isAnd = whereClause.getLogicalOp() == WhereClause.LogicalOp.AND;
+        List<WhereCondition> conditions = whereClause.getConditions();
+
+        // Determine scan length from the first condition's column
+        // (all columns have the same number of rows in a columnar store)
+        String firstCol = conditions.get(0).getColumn();
+        List<String> firstColData = storageEngine.readColumn(tableName, firstCol);
+        int rowCount = firstColData.size();
+
+        // Pre-load column data for every condition
+        List<List<String>> colDataList = new ArrayList<>();
+        for (WhereCondition cond : conditions) {
+            colDataList.add(storageEngine.readColumn(tableName, cond.getColumn()));
+        }
+
+        List<Integer> result = new ArrayList<>();
+        for (int i = 0; i < rowCount; i++) {
+            boolean rowMatches = isAnd; // AND starts true, OR starts false
+            for (int c = 0; c < conditions.size(); c++) {
+                WhereCondition cond = conditions.get(c);
+                List<String> colData = colDataList.get(c);
+                String cellVal = i < colData.size() ? colData.get(i) : "null";
+                boolean condMatch = evaluateCondition(cellVal, cond.getOp(), cond.getValue());
+                if (isAnd) {
+                    rowMatches = rowMatches && condMatch;
+                    if (!rowMatches) break; // short-circuit
+                } else {
+                    rowMatches = rowMatches || condMatch;
+                    if (rowMatches) break;  // short-circuit
                 }
             }
-            System.out.println("[Sequential Scan] Used full scan for " + tableName + "." + filterCol + ", matched " + validRowIndexes.size() + " logical row(s).");
+            if (rowMatches) result.add(i);
         }
-        
-        return validRowIndexes;
+
+        String opLabel = isAnd ? "AND" : "OR";
+        System.out.println("[Sequential Scan] Used full scan for " + tableName
+                + " (" + conditions.size() + " condition(s) joined by " + opLabel
+                + "), matched " + result.size() + " logical row(s).");
+        return result;
     }
+
+    // -------------------------------------------------------------------------
+    // Condition evaluator
+    // -------------------------------------------------------------------------
 
     private boolean evaluateCondition(String val1, String op, String val2) {
         try {
-            String v1 = normalizeBoolean(val1);
-            String v2 = normalizeBoolean(val2);
-            double num1 = Double.parseDouble(v1.trim());
-            double num2 = Double.parseDouble(v2.trim());
-            switch (op) {
-                case "=":
-                    return num1 == num2;
-                case ">":
-                    return num1 > num2;
-                case "<":
-                    return num1 < num2;
-            }
+            double num1 = Double.parseDouble(normalizeBoolean(val1).trim());
+            double num2 = Double.parseDouble(normalizeBoolean(val2).trim());
+            return switch (op) {
+                case "="  -> num1 == num2;
+                case "!=" -> num1 != num2;
+                case ">"  -> num1 > num2;
+                case "<"  -> num1 < num2;
+                case ">=" -> num1 >= num2;
+                case "<=" -> num1 <= num2;
+                default   -> false;
+            };
         } catch (NumberFormatException e) {
-            switch (op) {
-                case "=":
-                    return val1.trim().equals(val2.trim());
-            }
+            // String comparison
+            return switch (op) {
+                case "="  -> val1.trim().equalsIgnoreCase(val2.trim());
+                case "!=" -> !val1.trim().equalsIgnoreCase(val2.trim());
+                default   -> false;
+            };
         }
-        return false;
     }
 
     private String normalizeBoolean(String val) {
         String s = val.trim().toLowerCase();
-        if (s.equals("true"))
-            return "1";
-        if (s.equals("false"))
-            return "0";
+        if (s.equals("true"))  return "1";
+        if (s.equals("false")) return "0";
         return s;
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    /** Expands ["*"] to the full ordered list of column names in the schema. */
+    private List<String> resolveColumns(List<String> requested, TableSchema schema) {
+        if (requested.size() == 1 && requested.get(0).equals("*")) {
+            List<String> all = new ArrayList<>();
+            for (ColumnSchema col : schema.getColumns()) {
+                all.add(col.getName());
+            }
+            return all;
+        }
+        return requested;
+    }
+
+    /** Validates that every column referenced in a WHERE clause exists in the schema. */
+    private void validateWhereClause(WhereClause whereClause, TableSchema schema) {
+        if (whereClause == null) return;
+        for (WhereCondition cond : whereClause.getConditions()) {
+            if (schema.getColumn(cond.getColumn()) == null) {
+                throw new IllegalArgumentException("Filter column not found: " + cond.getColumn());
+            }
+        }
     }
 }

@@ -9,6 +9,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class QueryParser {
+
+    // Matches a single condition: col op val  (op is =, >, <, >=, <=, !=)
+    private static final Pattern CONDITION_PAT =
+            Pattern.compile("(\\w+)\\s*(>=|<=|!=|[=><])\\s*([^\\s]+(?:\\s+[^\\s]+)*)");
+
     public Query parse(String query) {
         query = query.trim();
         if (query.toUpperCase().startsWith("CREATE TABLE")) {
@@ -25,11 +30,80 @@ public class QueryParser {
         throw new IllegalArgumentException("Unsupported query: " + query);
     }
 
+    // -------------------------------------------------------------------------
+    // WHERE clause parsing
+    // -------------------------------------------------------------------------
+
+    /**
+     * Splits the query into [mainPart, whereClauseString].
+     * Returns null for whereClauseString if there is no WHERE clause.
+     */
+    private String[] splitWhereClause(String query) {
+        String upper = query.toUpperCase();
+        int whereIdx = upper.lastIndexOf(" WHERE ");
+        if (whereIdx == -1) {
+            return new String[]{ query, null };
+        }
+        String mainPart    = query.substring(0, whereIdx).trim();
+        String whereClause = query.substring(whereIdx + 7).trim();
+        return new String[]{ mainPart, whereClause };
+    }
+
+    /**
+     * Parses a WHERE clause string that may contain multiple conditions joined
+     * by AND or OR (but not both mixed — first keyword wins).
+     *
+     * Supported operators: =  >  <  >=  <=  !=
+     *
+     * Returns null if whereClauseStr is null (no WHERE clause at all).
+     */
+    private WhereClause parseWhereClause(String whereClauseStr) {
+        if (whereClauseStr == null) return null;
+
+        // Determine the logical operator by scanning for AND / OR keywords
+        // (case-insensitive, surrounded by spaces so we don't confuse column names)
+        WhereClause.LogicalOp logicalOp = WhereClause.LogicalOp.AND; // default
+        String upperWhere = whereClauseStr.toUpperCase();
+
+        // Split on AND / OR — we support only one type per query (first found wins)
+        String[] rawConditions;
+        if (upperWhere.matches("(?i).*\\bAND\\b.*")) {
+            logicalOp = WhereClause.LogicalOp.AND;
+            rawConditions = whereClauseStr.split("(?i)\\bAND\\b");
+        } else if (upperWhere.matches("(?i).*\\bOR\\b.*")) {
+            logicalOp = WhereClause.LogicalOp.OR;
+            rawConditions = whereClauseStr.split("(?i)\\bOR\\b");
+        } else {
+            rawConditions = new String[]{ whereClauseStr };
+        }
+
+        List<WhereCondition> conditions = new ArrayList<>();
+        for (String raw : rawConditions) {
+            String trimmed = raw.trim();
+            Matcher m = CONDITION_PAT.matcher(trimmed);
+            if (!m.find()) {
+                throw new IllegalArgumentException("Invalid WHERE condition: '" + trimmed + "'");
+            }
+            String col = m.group(1);
+            String op  = m.group(2);
+            String val = m.group(3).trim()
+                    .replace("\"", "").replace("'", "")
+                    .replace("\u201c", "").replace("\u201d", "");
+            conditions.add(new WhereCondition(col, op, val));
+        }
+
+        return new WhereClause(conditions, logicalOp);
+    }
+
+    // -------------------------------------------------------------------------
+    // Individual query parsers
+    // -------------------------------------------------------------------------
+
     private CreateTableQuery parseCreateTable(String query) {
         Pattern pattern = Pattern.compile("CREATE\\s+TABLE\\s+(\\w+)\\s*\\((.*)\\)", Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(query);
         if (matcher.find()) {
-            String tableName = matcher.group(1);
+            String tableName  = matcher.group(1);
             String columnsPart = matcher.group(2);
             TableSchema schema = new TableSchema(tableName);
 
@@ -53,77 +127,71 @@ public class QueryParser {
         Pattern pattern = Pattern.compile("INSERT\\s+INTO\\s+(\\w+)\\s+VALUES\\s*\\((.*)\\)", Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(query);
         if (matcher.find()) {
-            String tableName = matcher.group(1);
+            String tableName  = matcher.group(1);
             String valuesPart = matcher.group(2);
             String[] valStrings = valuesPart.split(",");
             List<String> values = new ArrayList<>();
             for (String v : valStrings) {
-                values.add(v.trim().replace("\"", "").replace("'", "").replace("“", "").replace("”", ""));
+                values.add(v.trim()
+                        .replace("\"", "").replace("'", "")
+                        .replace("\u201c", "").replace("\u201d", ""));
             }
             return new InsertQuery(tableName, values);
         }
         throw new IllegalArgumentException("Invalid INSERT syntax");
     }
 
-    private String[] extractWhere(String query) {
-        String mainPart = query;
-        String filterCol = null, filterOp = null, filterVal = null;
-        String upper = query.toUpperCase();
-        int whereIdx = upper.lastIndexOf(" WHERE ");
-        if (whereIdx != -1) {
-            String whereClause = query.substring(whereIdx + 7).trim();
-            mainPart = query.substring(0, whereIdx).trim();
-            Pattern wherePat = Pattern.compile("(\\w+)\\s*([=><])\\s*(.*)");
-            Matcher w = wherePat.matcher(whereClause);
-            if (w.find()) {
-                filterCol = w.group(1);
-                filterOp = w.group(2);
-                filterVal = w.group(3).trim().replace("\"", "").replace("'", "").replace("“", "").replace("”", "");
-            }
-        }
-        return new String[] { mainPart, filterCol, filterOp, filterVal };
-    }
-
     private SelectQuery parseSelect(String query) {
-        String[] parts = extractWhere(query);
-        String mainPart = parts[0];
+        String[] parts = splitWhereClause(query);
+        String mainPart       = parts[0];
+        WhereClause whereClause = parseWhereClause(parts[1]);
+
         Pattern pattern = Pattern.compile("SELECT\\s+(.*?)\\s+FROM\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(mainPart);
         if (matcher.find()) {
             String colsPart = matcher.group(1);
             String tableName = matcher.group(2);
             List<String> cols = new ArrayList<>();
-            for (String c : colsPart.split(",")) {
-                cols.add(c.trim());
+            if (colsPart.trim().equals("*")) {
+                cols.add("*");
+            } else {
+                for (String c : colsPart.split(",")) {
+                    cols.add(c.trim());
+                }
             }
-            return new SelectQuery(tableName, cols, parts[1], parts[2], parts[3]);
+            return new SelectQuery(tableName, cols, whereClause);
         }
         throw new IllegalArgumentException("Invalid SELECT syntax");
     }
 
     private UpdateQuery parseUpdate(String query) {
-        String[] parts = extractWhere(query);
-        String mainPart = parts[0];
+        String[] parts = splitWhereClause(query);
+        String mainPart       = parts[0];
+        WhereClause whereClause = parseWhereClause(parts[1]);
+
         Pattern pattern = Pattern.compile("UPDATE\\s+(\\w+)\\s+SET\\s+(\\w+)\\s*=\\s*(.*)", Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(mainPart);
         if (matcher.find()) {
             String tableName = matcher.group(1);
-            String setCol = matcher.group(2);
-            String setVal = matcher.group(3).trim().replace("\"", "").replace("'", "").replace("“", "").replace("”",
-                    "");
-            return new UpdateQuery(tableName, setCol, setVal, parts[1], parts[2], parts[3]);
+            String setCol    = matcher.group(2);
+            String setVal    = matcher.group(3).trim()
+                    .replace("\"", "").replace("'", "")
+                    .replace("\u201c", "").replace("\u201d", "");
+            return new UpdateQuery(tableName, setCol, setVal, whereClause);
         }
         throw new IllegalArgumentException("Invalid UPDATE syntax");
     }
 
     private DeleteQuery parseDelete(String query) {
-        String[] parts = extractWhere(query);
-        String mainPart = parts[0];
+        String[] parts = splitWhereClause(query);
+        String mainPart       = parts[0];
+        WhereClause whereClause = parseWhereClause(parts[1]);
+
         Pattern pattern = Pattern.compile("DELETE\\s+FROM\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(mainPart);
         if (matcher.find()) {
             String tableName = matcher.group(1);
-            return new DeleteQuery(tableName, parts[1], parts[2], parts[3]);
+            return new DeleteQuery(tableName, whereClause);
         }
         throw new IllegalArgumentException("Invalid DELETE syntax");
     }
