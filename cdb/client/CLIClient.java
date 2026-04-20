@@ -235,8 +235,12 @@ public class CLIClient {
                 if (db == null) {
                     System.out.println("No database selected.");
                 } else {
-                    db.initializeIndexes();
-                    System.out.println("Indexes re-initialized successfully.");
+                    try {
+                        db.initializeIndexes();
+                        System.out.println("Indexes re-initialized successfully.");
+                    } catch (java.io.IOException e) {
+                        System.out.println("Error re-initializing indexes: " + e.getMessage());
+                    }
                 }
                 System.out.println();
                 continue;

@@ -41,4 +41,8 @@ public class DatabaseAPI {
     public String dumpIndex(String tableName) {
         return indexManager.dumpIndex(tableName);
     }
+
+    public void initializeIndexes() throws java.io.IOException {
+        indexManager.initializeAll();
+    }
 }
