@@ -242,6 +242,13 @@ public class CLIClient {
                 continue;
             }
 
+            // ── SQL commands ──────────────────────────────────────────────
+            if (db == null) {
+                System.out.println("No database selected. Use: USE DATABASE <name>");
+                System.out.println();
+                continue;
+            }
+
             String result = db.execute(line);
             System.out.println(result);
             System.out.println();
