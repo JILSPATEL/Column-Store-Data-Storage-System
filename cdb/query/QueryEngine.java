@@ -60,13 +60,20 @@ public class QueryEngine {
             throw new IllegalArgumentException("Column count doesn't match value count.");
         }
 
-        // Enforce constraints: PRIMARY_KEY, UNIQUE, NOT_NULL
+        // Validate types and constraints before any writes
         for (int i = 0; i < schema.getColumns().size(); i++) {
             ColumnSchema col = schema.getColumns().get(i);
             String val = q.getValues().get(i);
+            
+            // Check NOT_NULL
             if (col.hasConstraint("NOT_NULL") && (val == null || val.isEmpty() || val.equalsIgnoreCase("null"))) {
                 throw new IllegalArgumentException("Column " + col.getName() + " cannot be null.");
             }
+            
+            // Type validation (Dry run parsing)
+            validateType(val, col.getType());
+
+            // Check UNIQUE/PRIMARY_KEY
             if (col.hasConstraint("PRIMARY_KEY") || col.hasConstraint("UNIQUE")) {
                 List<String> existing = storageEngine.readColumn(q.getTableName(), col.getName());
                 if (existing.contains(val)) {
@@ -76,7 +83,7 @@ public class QueryEngine {
             }
         }
 
-        // Append to all columns
+        // All validations passed, now append to all columns
         for (int i = 0; i < schema.getColumns().size(); i++) {
             ColumnSchema col = schema.getColumns().get(i);
             storageEngine.appendValue(q.getTableName(), col.getName(), q.getValues().get(i));
@@ -275,6 +282,31 @@ public class QueryEngine {
                 case "!=" -> !val1.trim().equalsIgnoreCase(val2.trim());
                 default   -> false;
             };
+        }
+    }
+
+    private void validateType(String value, String type) {
+        if (value == null || value.equalsIgnoreCase("null")) return;
+        try {
+            switch (type.toUpperCase()) {
+                case "BYTE":       Byte.parseByte(value.trim()); break;
+                case "SHORT":      Short.parseShort(value.trim()); break;
+                case "INT":
+                case "INTEGER":    Integer.parseInt(value.trim()); break;
+                case "LONG":
+                case "BIGINT":     Long.parseLong(value.trim()); break;
+                case "FLOAT":
+                case "REAL":       Float.parseFloat(value.trim()); break;
+                case "DOUBLE":
+                case "DECIMAL":    Double.parseDouble(value.trim()); break;
+                case "BOOLEAN":
+                case "BOOL":       break; // Boolean.parseBoolean always works
+                case "BIGDECIMAL":
+                case "NUMERIC":    new java.math.BigDecimal(value.trim()); break;
+                default:           break; // STRING/other are always valid
+            }
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid value for type " + type + ": \"" + value + "\". " + e.getMessage());
         }
     }
 
