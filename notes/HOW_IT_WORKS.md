@@ -29,9 +29,9 @@ age.col   →  25 / 30 / 20
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    You (the user)                        │
-│              typing SQL at CDB >  prompt                 │
+│              typing ColSQL at CDB >  prompt                 │
 └────────────────────────┬────────────────────────────────┘
-                         │ raw SQL string
+                         │ raw ColSQL string
                          ▼
               ┌─────────────────────┐
               │    CLIClient.java   │  ← REPL loop (reads input, prints output)
@@ -45,7 +45,7 @@ age.col   →  25 / 30 / 20
                ▼                   ▼
    ┌──────────────────┐  ┌──────────────────────┐
    │  QueryParser.java │  │  SchemaManager.java  │
-   │  (parses SQL →   │  │  (loads .schema files │
+   │  (parses ColSQL →   │  │  (loads .schema files │
    │   Query object)  │  │   from disk at start) │
    └────────┬─────────┘  └──────────────────────┘
             │ Query AST object
@@ -77,7 +77,7 @@ age.col   →  25 / 30 / 20
 We'll simulate running `test_script.txt` step by step, showing exactly what happens on disk and in memory at each stage.
 
 **Script contents:**
-```sql
+```colsql
 CREATE TABLE users (id INT PRIMARY_KEY, name STRING, age INT)
 INSERT INTO users VALUES (1, "Alice", 25)
 INSERT INTO users VALUES (2, "Bob", 30)
@@ -304,7 +304,7 @@ Bob     30
 ## Part 4: Constraint Enforcement (Simulated)
 
 ### PRIMARY_KEY violation
-```sql
+```colsql
 CREATE TABLE pk_demo (id INT PRIMARY_KEY, name STRING)
 INSERT INTO pk_demo VALUES (1, "Alice")   -- OK
 INSERT INTO pk_demo VALUES (1, "Bob")     -- FAILS
@@ -319,7 +319,7 @@ Bob is **never written to disk**. Alice's row is safe.
 ---
 
 ### UNIQUE violation
-```sql
+```colsql
 CREATE TABLE unique_demo (id INT, email STRING UNIQUE)
 INSERT INTO unique_demo VALUES (1, "alice@example.com")   -- OK
 INSERT INTO unique_demo VALUES (2, "alice@example.com")   -- FAILS
@@ -329,7 +329,7 @@ Same mechanism — `email.col` is scanned for duplicates before writing.
 ---
 
 ### NOT_NULL violation
-```sql
+```colsql
 CREATE TABLE notnull_demo (id INT, username STRING NOT_NULL)
 INSERT INTO notnull_demo VALUES (1, "alice")   -- OK
 INSERT INTO notnull_demo VALUES (2, null)      -- FAILS
@@ -366,7 +366,7 @@ At startup, `SchemaManager` scans the `metadata/` folder and parses every `.sche
 |---|---|---|
 | **Entry Point** | `CLIClient.java` | REPL loop — reads input, prints output |
 | **Facade** | `DatabaseAPI.java` | Wires all subsystems together |
-| **Parsing** | `QueryParser.java` | Converts raw SQL string → typed Query object |
+| **Parsing** | `QueryParser.java` | Converts raw ColSQL string → typed Query object |
 | **AST Nodes** | `querytypes/` | `SelectQuery`, `InsertQuery`, etc. |
 | **Execution** | `QueryEngine.java` | Validates schema, enforces constraints, calls storage |
 | **Schema Memory** | `SchemaManager.java` | Loads/saves `.schema` files, keeps schemas in HashMap |

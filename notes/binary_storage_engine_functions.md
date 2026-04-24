@@ -16,9 +16,9 @@ Below is an in-depth breakdown of every function (method) within the class, its 
 *   **Purpose**: File path resolution.
 *   **Details**: Constructs and returns the absolute file system path for a specific column's binary file. It combines `tablesDir`, the table name, and the column name into a format like `databases/mydb/tables/users/age.bin`.
 
-### `typeTag(String sqlType)`
+### `typeTag(String colSqlType)`
 *   **Purpose**: Data type mapping.
-*   **Details**: Accepts an SQL data type string (e.g., `"INT"`, `"DOUBLE"`, `"BOOLEAN"`) and converts it into an internal integer constant representing that type (e.g., `TYPE_INT = 3`). This tag is critical as it instructs the rest of the engine on how to encode/decode the binary data.
+*   **Details**: Accepts an ColSQL data type string (e.g., `"INT"`, `"DOUBLE"`, `"BOOLEAN"`) and converts it into an internal integer constant representing that type (e.g., `TYPE_INT = 3`). This tag is critical as it instructs the rest of the engine on how to encode/decode the binary data.
 
 ### `valueWidth(int tag)`
 *   **Purpose**: Determines data width without metadata.

@@ -33,8 +33,8 @@ public class BinaryStorageEngine implements StorageEngine {
         return tablesDir + "/" + table + "/" + column + ".bin";
     }
 
-    private int typeTag(String sqlType) {
-        switch (sqlType.toUpperCase()) {
+    private int typeTag(String colSqlType) {
+        switch (colSqlType.toUpperCase()) {
             case "BYTE":       return NumericalPersister.TYPE_BYTE;
             case "SHORT":      return NumericalPersister.TYPE_SHORT;
             case "INT":
@@ -54,7 +54,7 @@ public class BinaryStorageEngine implements StorageEngine {
             case "TEXT":
             case "CHAR":       return CategoricalPersister.TYPE_STRING;
             default:
-                throw new IllegalArgumentException("Unsupported type: " + sqlType);
+                throw new IllegalArgumentException("Unsupported type: " + colSqlType);
         }
     }
 

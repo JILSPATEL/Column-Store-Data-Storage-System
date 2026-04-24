@@ -246,7 +246,7 @@ public class CLIClient {
                 continue;
             }
 
-            // ── SQL commands ──────────────────────────────────────────────
+            // ── ColSQL commands ──────────────────────────────────────────────
             if (db == null) {
                 System.out.println("No database selected. Use: USE DATABASE <name>");
                 System.out.println();
@@ -284,7 +284,7 @@ public class CLIClient {
         System.out.println("  CLEAR                   Clear the screen");
         System.out.println("  EXIT / QUIT             Exit the client");
         System.out.println();
-        System.out.println("SQL Commands:");
+        System.out.println("ColSQL Commands:");
         System.out.println("  CREATE TABLE t (c type [PK|UNIQUE|NOT_NULL], ...)");
         System.out.println("  INSERT INTO t VALUES (v1, v2, ...)");
         System.out.println("  SELECT col1, col2 FROM t WHERE cond1 AND/OR cond2");

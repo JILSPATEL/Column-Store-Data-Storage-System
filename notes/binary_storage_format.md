@@ -25,7 +25,7 @@ Every `.bin` file begins with an 8-byte header located exactly at byte offset `0
 
 The integer code present in bytes `0-3` determines the width of each subsequent record:
 
-| Type Tag | SQL Type | Byte Width (Data) | Total Record Width (1B Tombstone + Data)|
+| Type Tag | ColSQL Type | Byte Width (Data) | Total Record Width (1B Tombstone + Data)|
 | :---: | :--- | :---: | :---: |
 | `1` | `BYTE` | 1 | 2 |
 | `2` | `SHORT`| 2 | 3 |

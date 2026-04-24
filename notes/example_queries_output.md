@@ -1,10 +1,10 @@
 # Example Queries and Output
-This document demonstrates the execution of various SQL-like commands supported by the `Column-Store-Data-Storage-System`. The queries showcase database creation, table creation with constraints, data insertion, querying, updating, and deletion.
+This document demonstrates the execution of various ColSQL-like commands supported by the `Column-Store-Data-Storage-System`. The queries showcase database creation, table creation with constraints, data insertion, querying, updating, and deletion.
 
 We ran the interactive CLI (`java cdb.client.CLIClient`) and piped the following queries:
 
 ### Input Queries File (`test_queries.txt`)
-```sql
+```colsql
 CREATE DATABASE testdb
 SHOW DATABASES
 USE DATABASE testdb

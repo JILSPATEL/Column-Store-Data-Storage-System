@@ -24,7 +24,7 @@ No arguments needed. A `databases/` folder is auto-created on first run.
 
 ## 3. DATABASE MANAGEMENT COMMANDS
 
-```sql
+```colsql
 SHOW DATABASES                  -- list all databases (marks active one)
 CREATE DATABASE <name>          -- create a new database
 USE DATABASE <name>             -- switch to a database
@@ -46,15 +46,15 @@ CDB [emp] >             ← prompt shows active database
 
 ---
 
-## 4. SUPPORTED SQL COMMANDS
+## 4. SUPPORTED ColSQL COMMANDS
 
-> SQL only works after `USE DATABASE <name>` is run.
+> ColSQL only works after `USE DATABASE <name>` is run.
 
 ### CREATE TABLE
-```sql
+```colsql
 CREATE TABLE <name> (<col> <TYPE> [CONSTRAINT], ...)
 ```
-```sql
+```colsql
 CREATE TABLE integers (id INT PRIMARY_KEY, byte_col BYTE, short_col SHORT, long_col LONG)
 CREATE TABLE decimals (id INT PRIMARY_KEY, float_col FLOAT, double_col DOUBLE, big_col BIGDECIMAL)
 CREATE TABLE mixed (id INT PRIMARY_KEY, score DOUBLE, active BOOLEAN)
@@ -66,7 +66,7 @@ CREATE TABLE mixed (id INT PRIMARY_KEY, score DOUBLE, active BOOLEAN)
 ---
 
 ### INSERT
-```sql
+```colsql
 INSERT INTO integers VALUES (1, 127, 32767, 9223372036854775807)
 INSERT INTO mixed VALUES (2, 99.5, true)
 ```
@@ -74,11 +74,11 @@ INSERT INTO mixed VALUES (2, 99.5, true)
 ---
 
 ### SELECT
-```sql
+```colsql
 SELECT <col1>, <col2> FROM <table>
 SELECT <col1>, <col2> FROM <table> WHERE <col> <op> <value>
 ```
-```sql
+```colsql
 SELECT id, long_col FROM integers
 SELECT id, score FROM mixed WHERE score > 50.0
 SELECT id, score FROM mixed WHERE active = true
@@ -88,21 +88,21 @@ SELECT id, score FROM mixed WHERE active = true
 ---
 
 ### UPDATE
-```sql
+```colsql
 UPDATE mixed SET score=100.0 WHERE id=2
 ```
 
 ---
 
 ### DELETE
-```sql
+```colsql
 DELETE FROM mixed WHERE id=2
 ```
 
 ---
 
 ### EXIT / QUIT
-```sql
+```colsql
 EXIT
 QUIT
 ```
@@ -147,7 +147,7 @@ This generates `databases/numericdb` with populated sample data.
 
 | Error | Cause | Fix |
 |---|---|---|
-| `No database selected` | SQL typed before `USE DATABASE` | Run `USE DATABASE <name>` first |
+| `No database selected` | ColSQL typed before `USE DATABASE` | Run `USE DATABASE <name>` first |
 | `Table not found: X` | Wrong active database | Check with `SHOW DATABASES`, switch DB |
 | `Constraint violation on id` | Duplicate PRIMARY_KEY or UNIQUE | Use a different value |
 | `Column X cannot be null` | NOT_NULL constraint violated | Provide a real value |

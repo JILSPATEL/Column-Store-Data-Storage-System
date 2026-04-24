@@ -14,7 +14,7 @@ The CDB prototype is a modular, column-oriented database implemented in Java. It
 - `TextStorageEngine`: The current implementation writing data. Each column is stored in a separate `.col` file within a directory named after the table (e.g., `cdb_data/tables/users/age.col`). It reads and writes values line-by-line, maintaining row associations via identical line indices across a table's column files.
 
 ### 3. Query Execution Layer (`cdb.query`)
-- `Query` & `querytypes.*`: AST (Abstract Syntax Tree) classes representing parsed SQL-like commands (`SelectQuery`, `InsertQuery`, etc.).
+- `Query` & `querytypes.*`: AST (Abstract Syntax Tree) classes representing parsed ColSQL-like commands (`SelectQuery`, `InsertQuery`, etc.).
 - `QueryParser`: Parses raw string inputs into typed `Query` objects using regular expressions and string splitting. It extracts table names, columns, values, and `WHERE` filter conditions.
 - `QueryEngine`: The central orchestrator. It receives a `Query` object, coordinates with the `SchemaManager` to validate the operation, and calls the `StorageEngine` to execute it. It correctly applies constraints, evaluates `WHERE` conditions to find matching row indices, and only reads the specific `.col` files requested by a `SELECT` query (demonstrating column-store efficiency).
 
@@ -23,4 +23,4 @@ The CDB prototype is a modular, column-oriented database implemented in Java. It
 - `CLIClient` (`cdb.client`): A simple command-line REPL that continually accepts user input, passes it to the `DatabaseAPI`, and prints the operations' results or error messages to the screen.
 
 ## Conclusion
-The prototype successfully meets the design requirements. It strictly enforces the `StorageEngine` interface for future C++ compatibility, stores data in column-oriented text files, natively parses a subset of SQL, and enforces structural integrity and constraints on DML operations.
+The prototype successfully meets the design requirements. It strictly enforces the `StorageEngine` interface for future C++ compatibility, stores data in column-oriented text files, natively parses a subset of ColSQL, and enforces structural integrity and constraints on DML operations.

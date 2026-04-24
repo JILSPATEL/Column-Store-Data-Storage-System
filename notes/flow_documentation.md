@@ -7,15 +7,15 @@ This document provides an in-depth explanation of the `Column-Store-Data-Storage
 The system is organized into distinct layers, each handling a specific part of the database's operations. The source code resides in the `cdb` directory.
 
 ### 1.1 Client Layer (`cdb/client/`)
-*   **`CLIClient.java`**: The entry point of the application. It provides a Read-Eval-Print Loop (REPL) interface for users to enter commands and SQL queries.
-    *   **Concerns**: Handles system-level commands (`SHOW DATABASES`, `CREATE DATABASE`, `USE DATABASE`, `EXIT`). For SQL queries (like `SELECT`, `INSERT`), it passes the raw string to the API layer.
+*   **`CLIClient.java`**: The entry point of the application. It provides a Read-Eval-Print Loop (REPL) interface for users to enter commands and ColSQL queries.
+    *   **Concerns**: Handles system-level commands (`SHOW DATABASES`, `CREATE DATABASE`, `USE DATABASE`, `EXIT`). For ColSQL queries (like `SELECT`, `INSERT`), it passes the raw string to the API layer.
 
 ### 1.2 API Layer (`cdb/api/`)
 *   **`DatabaseAPI.java`**: The main facade for database operations.
-    *   **Concerns**: Orchestrates the underlying components (`QueryParser`, `QueryEngine`, `SchemaManager`, `StorageEngine`). It receives raw SQL strings from the client, passes them to the parser, and hands the resulting abstract query objects to the execution engine.
+    *   **Concerns**: Orchestrates the underlying components (`QueryParser`, `QueryEngine`, `SchemaManager`, `StorageEngine`). It receives raw ColSQL strings from the client, passes them to the parser, and hands the resulting abstract query objects to the execution engine.
 
 ### 1.3 Query Parsing Layer (`cdb/query/` & `cdb/query/querytypes/`)
-*   **`QueryParser.java`**: Evaluates the raw SQL string using regular expressions.
+*   **`QueryParser.java`**: Evaluates the raw ColSQL string using regular expressions.
     *   **Concerns**: Identifies the query type (`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`) and extracts relevant components (table name, columns, values, `WHERE` conditions). It throws errors for invalid syntax.
 *   **`querytypes/*.java` (`Query`, `SelectQuery`, `InsertQuery`, etc.)**: Abstract representations of parsed queries.
     *   **Concerns**: Serve as structured Data Transfer Objects (DTOs) that carry parsed information from the Parser to the Engine.
