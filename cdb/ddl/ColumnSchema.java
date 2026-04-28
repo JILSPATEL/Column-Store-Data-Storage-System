@@ -2,11 +2,23 @@ package cdb.ddl;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 public class ColumnSchema {
     private String name;
     private String type; // e.g., INT, STRING
     private List<String> constraints; // PRIMARY_KEY, NOT_NULL, UNIQUE
+
+    /**
+     * Types that are inherently categorical (low-cardinality, string-based or boolean).
+     * Bitmap indexes are ONLY built for these types.
+     * Numeric types (INT, DOUBLE, FLOAT, LONG, etc.) are excluded because
+     * continuous values explode the number of distinct bitmap vectors.
+     */
+    private static final Set<String> CATEGORICAL_TYPES = Set.of(
+        "STRING", "VARCHAR", "TEXT", "CHAR",
+        "BOOLEAN", "BOOL"
+    );
 
     public ColumnSchema(String name, String type) {
         this.name = name;
@@ -20,11 +32,21 @@ public class ColumnSchema {
 
     public String getName() { return name; }
     public String getType() { return type; }
+
+    /**
+     * Returns true if this column's type is categorical (string or boolean),
+     * meaning it is eligible for a bitmap index.
+     * Returns false for any numeric type (INT, LONG, DOUBLE, FLOAT, etc.).
+     */
+    public boolean isCategorical() {
+        return CATEGORICAL_TYPES.contains(type.toUpperCase());
+    }
+
     public boolean hasConstraint(String constraint) {
         return constraints.contains(constraint);
     }
     public List<String> getConstraints() { return constraints; }
-    
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
