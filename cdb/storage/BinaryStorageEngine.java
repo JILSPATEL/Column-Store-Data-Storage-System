@@ -14,12 +14,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * BinaryStorageEngine – a column-oriented binary persistence layer.
- * Now refactored to support both Numerical and Categorical data.
- * 
- * It delegates actual persistence to specialized ColumnPersister implementations.
- */
 public class BinaryStorageEngine implements StorageEngine {
 
     private final String tablesDir;

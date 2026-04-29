@@ -34,10 +34,6 @@ public class QueryParser {
     // WHERE clause parsing
     // -------------------------------------------------------------------------
 
-    /**
-     * Splits the query into [mainPart, whereClauseString].
-     * Returns null for whereClauseString if there is no WHERE clause.
-     */
     private String[] splitWhereClause(String query) {
         String upper = query.toUpperCase();
         int whereIdx = upper.lastIndexOf(" WHERE ");
@@ -49,50 +45,36 @@ public class QueryParser {
         return new String[]{ mainPart, whereClause };
     }
 
-    /**
-     * Parses a WHERE clause string that may contain multiple conditions joined
-     * by AND or OR (but not both mixed — first keyword wins).
-     *
-     * Supported operators: =  >  <  >=  <=  !=
-     *
-     * Returns null if whereClauseStr is null (no WHERE clause at all).
-     */
     private WhereClause parseWhereClause(String whereClauseStr) {
         if (whereClauseStr == null) return null;
 
-        // Determine the logical operator by scanning for AND / OR keywords
-        // (case-insensitive, surrounded by spaces so we don't confuse column names)
-        WhereClause.LogicalOp logicalOp = WhereClause.LogicalOp.AND; // default
-        String upperWhere = whereClauseStr.toUpperCase();
-
-        // Split on AND / OR — we support only one type per query (first found wins)
-        String[] rawConditions;
-        if (upperWhere.matches("(?i).*\\bAND\\b.*")) {
-            logicalOp = WhereClause.LogicalOp.AND;
-            rawConditions = whereClauseStr.split("(?i)\\bAND\\b");
-        } else if (upperWhere.matches("(?i).*\\bOR\\b.*")) {
-            logicalOp = WhereClause.LogicalOp.OR;
-            rawConditions = whereClauseStr.split("(?i)\\bOR\\b");
-        } else {
-            rawConditions = new String[]{ whereClauseStr };
-        }
-
-        List<WhereCondition> conditions = new ArrayList<>();
-        for (String raw : rawConditions) {
-            String trimmed = raw.trim();
-            Matcher m = CONDITION_PAT.matcher(trimmed);
-            if (!m.find()) {
-                throw new IllegalArgumentException("Invalid WHERE condition: '" + trimmed + "'");
+        List<List<WhereCondition>> orGroups = new ArrayList<>();
+        
+        // Split by OR first (lower precedence)
+        String[] orParts = whereClauseStr.split("(?i)\\bOR\\b");
+        
+        for (String orPart : orParts) {
+            List<WhereCondition> andGroup = new ArrayList<>();
+            // Split by AND (higher precedence)
+            String[] andParts = orPart.split("(?i)\\bAND\\b");
+            
+            for (String raw : andParts) {
+                String trimmed = raw.trim();
+                Matcher m = CONDITION_PAT.matcher(trimmed);
+                if (!m.find()) {
+                    throw new IllegalArgumentException("Invalid WHERE condition: '" + trimmed + "'");
+                }
+                String col = m.group(1);
+                String op  = m.group(2);
+                String val = m.group(3).trim()
+                        .replace("\"", "").replace("'", "")
+                        .replace("\u201c", "").replace("\u201d", "");
+                andGroup.add(new WhereCondition(col, op, val));
             }
-            String col = m.group(1);
-            String op  = m.group(2);
-            String val = m.group(3).trim()
-                    .replace("\"", "").replace("'", "")
-                    .replace("\u201c", "").replace("\u201d", "");
-            conditions.add(new WhereCondition(col, op, val));
+            orGroups.add(andGroup);
         }
 
-        return new WhereClause(conditions, logicalOp);
+        return new WhereClause(orGroups);
     }
 
     // -------------------------------------------------------------------------

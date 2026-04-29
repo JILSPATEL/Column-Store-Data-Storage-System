@@ -32,15 +32,15 @@ public class SelectQuery implements Query {
 
     // ---- Legacy getters (single-condition convenience) ----
     public String getFilterColumn() {
-        return (whereClause != null && !whereClause.getConditions().isEmpty())
-                ? whereClause.getConditions().get(0).getColumn() : null;
+        return (whereClause != null && !whereClause.getAllConditions().isEmpty())
+                ? whereClause.getAllConditions().get(0).getColumn() : null;
     }
     public String getFilterOp() {
-        return (whereClause != null && !whereClause.getConditions().isEmpty())
-                ? whereClause.getConditions().get(0).getOp() : null;
+        return (whereClause != null && !whereClause.getAllConditions().isEmpty())
+                ? whereClause.getAllConditions().get(0).getOp() : null;
     }
     public String getFilterValue() {
-        return (whereClause != null && !whereClause.getConditions().isEmpty())
-                ? whereClause.getConditions().get(0).getValue() : null;
+        return (whereClause != null && !whereClause.getAllConditions().isEmpty())
+                ? whereClause.getAllConditions().get(0).getValue() : null;
     }
 }

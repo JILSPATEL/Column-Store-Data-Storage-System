@@ -15,20 +15,20 @@ import java.util.*;
  * using a strict TWO-GATE policy:
  *
  * GATE 1 — TYPE GATE (ColumnSchema.isCategorical()):
- *   Numeric types (INT, LONG, DOUBLE, FLOAT, etc.) are UNCONDITIONALLY excluded.
- *   No cardinality check is ever run for numeric columns.
+ * Numeric types (INT, LONG, DOUBLE, FLOAT, etc.) are UNCONDITIONALLY excluded.
+ * No cardinality check is ever run for numeric columns.
  *
  * GATE 2 — CARDINALITY GATE:
- *   Even for categorical types (VARCHAR, STRING, BOOLEAN...), the index is
- *   skipped or dropped if the number of distinct values is too high relative
- *   to the row count. This prevents high-cardinality string columns (e.g., Name,
- *   Email) from creating one BitSet vector per row — the same explosion problem
- *   that affects unindexed numeric columns.
+ * Even for categorical types (VARCHAR, STRING, BOOLEAN...), the index is
+ * skipped or dropped if the number of distinct values is too high relative
+ * to the row count. This prevents high-cardinality string columns (e.g., Name,
+ * Email) from creating one BitSet vector per row — the same explosion problem
+ * that affects unindexed numeric columns.
  *
- *   Thresholds (tunable via constants below):
- *     MAX_DISTINCT_VALUES   — absolute cap on distinct values regardless of row count
- *     MAX_CARDINALITY_RATIO — max ratio of distinct/total rows (above = too sparse)
- *     MIN_ROWS_FOR_RATIO    — ratio check only kicks in once the table is large enough
+ * Thresholds (tunable via constants below):
+ * MAX_DISTINCT_VALUES — absolute cap on distinct values regardless of row count
+ * MAX_CARDINALITY_RATIO — max ratio of distinct/total rows (above = too sparse)
+ * MIN_ROWS_FOR_RATIO — ratio check only kicks in once the table is large enough
  */
 public class BitmapIndexManager {
     private final StorageEngine storageEngine;
@@ -36,17 +36,16 @@ public class BitmapIndexManager {
 
     // ── Cardinality gate thresholds ──────────────────────────────────────────
     /** Absolute maximum number of distinct values allowed in a bitmap index. */
-    private static final int    MAX_DISTINCT_VALUES   = 100;
+    private static final int MAX_DISTINCT_VALUES = 100;
     /**
      * If the table has at least MIN_ROWS_FOR_RATIO rows, also reject the index
      * when distinctValues / totalRows > MAX_CARDINALITY_RATIO.
      * Example: 60 distinct names in 100 rows → ratio 0.60 > 0.50 → skip.
      */
     private static final double MAX_CARDINALITY_RATIO = 0.50;
-    private static final int    MIN_ROWS_FOR_RATIO    = 10;
+    private static final int MIN_ROWS_FOR_RATIO = 10;
 
     // Table -> Column -> Value -> BitSet
-    // Only categorical, low-cardinality columns appear as keys here.
     private final Map<String, Map<String, Map<String, BitSet>>> indexes = new HashMap<>();
 
     // Table -> Number of active (non-deleted) rows
@@ -55,7 +54,8 @@ public class BitmapIndexManager {
     /**
      * Columns explicitly evicted by Gate 2 (cardinality exceeded).
      * These must NEVER be re-added to the index, even if cardinality temporarily
-     * drops due to deletes. Rebuild via buildIndex() is the only way to re-evaluate.
+     * drops due to deletes. Rebuild via buildIndex() is the only way to
+     * re-evaluate.
      * Table -> Set<columnName>
      */
     private final Map<String, Set<String>> evictedColumns = new HashMap<>();
@@ -79,13 +79,14 @@ public class BitmapIndexManager {
      * Builds (or rebuilds) the bitmap index for the given table.
      *
      * TWO-GATE POLICY applied per column:
-     *   Gate 1: col.isCategorical() — numerics are unconditionally excluded.
-     *   Gate 2: cardinality guard   — categorical columns with too many distinct
-     *           values relative to row count are also excluded.
+     * Gate 1: col.isCategorical() — numerics are unconditionally excluded.
+     * Gate 2: cardinality guard — categorical columns with too many distinct
+     * values relative to row count are also excluded.
      */
     public void buildIndex(String tableName) throws IOException {
         TableSchema schema = schemaManager.getTable(tableName);
-        if (schema == null) return;
+        if (schema == null)
+            return;
 
         Map<String, Map<String, BitSet>> tableIndexes = new HashMap<>();
         int rowCount = 0;
@@ -105,7 +106,7 @@ public class BitmapIndexManager {
 
             Set<String> distinctVals = new HashSet<>(values);
             int distinctCount = distinctVals.size();
-            int totalRows     = values.size();
+            int totalRows = values.size();
 
             // ── Gate 2: cardinality guard ────────────────────────────────────
             if (exceedsCardinalityThreshold(distinctCount, totalRows)) {
@@ -153,10 +154,9 @@ public class BitmapIndexManager {
      * the sequential scan fallback.
      */
     public void insertRow(String tableName, TableSchema schema, List<String> values) {
-        Map<String, Map<String, BitSet>> tableIndexes =
-                indexes.computeIfAbsent(tableName, k -> new HashMap<>());
+        Map<String, Map<String, BitSet>> tableIndexes = indexes.computeIfAbsent(tableName, k -> new HashMap<>());
 
-        int newIdx    = tableRowCounts.getOrDefault(tableName, 0);
+        int newIdx = tableRowCounts.getOrDefault(tableName, 0);
         int totalRows = newIdx + 1; // after this insert
 
         Set<String> evicted = evictedColumns.getOrDefault(tableName, Collections.emptySet());
@@ -165,19 +165,20 @@ public class BitmapIndexManager {
             ColumnSchema col = schema.getColumns().get(i);
 
             // Gate 1: skip non-categorical columns — they are never indexed.
-            if (!col.isCategorical()) continue;
+            if (!col.isCategorical())
+                continue;
 
             String colName = col.getName();
 
             // If Gate 2 previously evicted this column, never re-add it.
-            if (evicted.contains(colName)) continue;
+            if (evicted.contains(colName))
+                continue;
 
             String val = values.get(i);
             // computeIfAbsent handles both:
-            //   (a) first insert into a newly created table (no prior buildIndex entry)
-            //   (b) subsequent inserts into an already-indexed column
-            Map<String, BitSet> colIndex =
-                    tableIndexes.computeIfAbsent(colName, k -> new HashMap<>());
+            // (a) first insert into a newly created table (no prior buildIndex entry)
+            // (b) subsequent inserts into an already-indexed column
+            Map<String, BitSet> colIndex = tableIndexes.computeIfAbsent(colName, k -> new HashMap<>());
             colIndex.computeIfAbsent(val, k -> new BitSet()).set(newIdx);
 
             // Gate 2 (post-insert): if adding this value pushed us over the threshold,
@@ -201,12 +202,14 @@ public class BitmapIndexManager {
      * No-op for non-categorical columns (they have no index entry).
      */
     public void updateValue(String tableName, String colName, int rowIndex,
-                            String oldValue, String newValue) {
+            String oldValue, String newValue) {
         Map<String, Map<String, BitSet>> tableIndexes = indexes.get(tableName);
-        if (tableIndexes == null) return;
+        if (tableIndexes == null)
+            return;
 
         Map<String, BitSet> colIndex = tableIndexes.get(colName);
-        if (colIndex == null) return; // column is not categorical — nothing to update
+        if (colIndex == null)
+            return; // column is not categorical — nothing to update
 
         // Remove old association
         BitSet oldBits = colIndex.get(oldValue);
@@ -225,48 +228,43 @@ public class BitmapIndexManager {
     /**
      * Returns matching row indexes for a given WhereClause.
      *
-     * - If whereClause is null  → returns all row indexes (no filter).
-     * - If every condition maps to an indexed (categorical) column  → fast bitmap path.
-     * - If ANY condition references a non-categorical/unindexed column → returns null,
-     *   signalling the QueryEngine to fall back to a sequential scan for the whole clause.
+     * - If whereClause is null → returns all row indexes (no filter).
+     * - If every condition maps to an indexed (categorical) column → fast bitmap
+     * path.
+     * - If ANY condition references a non-categorical/unindexed column → returns
+     * null,
+     * signalling the QueryEngine to fall back to a sequential scan for the whole
+     * clause.
      */
     public List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema,
-                                               WhereClause whereClause) {
-        if (whereClause == null) {
+            WhereClause whereClause) {
+        if (whereClause == null || whereClause.isEmpty()) {
             return allRows(tableName);
         }
 
-        List<WhereCondition> conditions = whereClause.getConditions();
-        boolean isAnd = whereClause.getLogicalOp() == WhereClause.LogicalOp.AND;
         int totalRows = tableRowCounts.getOrDefault(tableName, 0);
+        BitSet finalResult = new BitSet(totalRows);
 
-        List<BitSet> conditionBits = new ArrayList<>();
-        for (WhereCondition cond : conditions) {
-            BitSet bits = evaluateConditionWithIndex(tableName, cond, totalRows);
-            if (bits == null) {
-                // This condition's column has no bitmap index (it's numeric or not indexed).
-                // Signal a full sequential scan fallback.
-                return null;
+        for (List<WhereCondition> andGroup : whereClause.getOrGroups()) {
+            BitSet groupResult = new BitSet(totalRows);
+            groupResult.set(0, totalRows); // Start with all bits TRUE for AND logic
+
+            for (WhereCondition cond : andGroup) {
+                BitSet condBits = evaluateConditionWithIndex(tableName, cond, totalRows);
+                if (condBits == null) {
+                    // This condition's column has no bitmap index (numeric or evicted).
+                    // Signal a full sequential scan fallback.
+                    return null;
+                }
+                groupResult.and(condBits);
             }
-            conditionBits.add(bits);
+            finalResult.or(groupResult);
         }
 
-        // Combine per-condition BitSets with AND / OR
-        BitSet resultBits = (BitSet) conditionBits.get(0).clone();
-        for (int i = 1; i < conditionBits.size(); i++) {
-            if (isAnd) {
-                resultBits.and(conditionBits.get(i));
-            } else {
-                resultBits.or(conditionBits.get(i));
-            }
-        }
+        List<Integer> result = toList(finalResult);
 
-        List<Integer> result = toList(resultBits);
-
-        String op = isAnd ? "AND" : "OR";
-        System.out.println("[Bitmap Index] Fast lookup on '" + tableName + "' ("
-                + conditions.size() + " condition(s) joined by " + op
-                + "), matched " + result.size() + " row(s).");
+        System.out.println("[Bitmap Index] Fast lookup on '" + tableName
+                + "' (mixed AND/OR logic), matched " + result.size() + " row(s).");
         return result;
     }
 
@@ -274,13 +272,15 @@ public class BitmapIndexManager {
      * Legacy single-condition API kept for backward compatibility.
      */
     public List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema,
-                                               String filterCol, String filterOp, String filterVal) {
-        if (filterCol == null) return allRows(tableName);
+            String filterCol, String filterOp, String filterVal) {
+        if (filterCol == null)
+            return allRows(tableName);
 
         int totalRows = tableRowCounts.getOrDefault(tableName, 0);
         BitSet bits = evaluateConditionWithIndex(tableName,
                 new WhereCondition(filterCol, filterOp, filterVal), totalRows);
-        if (bits == null) return null;
+        if (bits == null)
+            return null;
 
         List<Integer> result = toList(bits);
         System.out.println("[Bitmap Index] Fast lookup on '" + tableName + "." + filterCol
@@ -308,14 +308,14 @@ public class BitmapIndexManager {
             sb.append("  Column: ").append(colName).append("\n");
             for (Map.Entry<String, BitSet> valEntry : colEntry.getValue().entrySet()) {
                 String val = valEntry.getKey();
-                BitSet bs  = valEntry.getValue();
+                BitSet bs = valEntry.getValue();
 
                 StringBuilder bits = new StringBuilder();
                 for (int i = 0; i < maxRows; i++) {
                     bits.append(bs.get(i) ? "1" : "0");
                 }
                 sb.append("    Value '").append(val).append("': ")
-                  .append(bits).append("  ").append(bs).append("\n");
+                        .append(bits).append("  ").append(bs).append("\n");
             }
         }
         return sb.toString().trim();
@@ -342,20 +342,23 @@ public class BitmapIndexManager {
         }
 
         Map<String, BitSet> colIndex = tableIndexes.get(cond.getColumn());
-        String filterOp  = cond.getOp();
+        String filterOp = cond.getOp();
         String filterVal = cond.getValue();
         BitSet resultBits = new BitSet();
 
         switch (filterOp) {
             case "=" -> {
                 BitSet exactMatch = colIndex.get(filterVal);
-                if (exactMatch != null) resultBits.or(exactMatch);
+                if (exactMatch != null)
+                    resultBits.or(exactMatch);
             }
             case "!=" -> {
                 // All live rows minus the matching ones
-                for (int i = 0; i < totalRows; i++) resultBits.set(i);
+                for (int i = 0; i < totalRows; i++)
+                    resultBits.set(i);
                 BitSet exactMatch = colIndex.get(filterVal);
-                if (exactMatch != null) resultBits.andNot(exactMatch);
+                if (exactMatch != null)
+                    resultBits.andNot(exactMatch);
             }
             default -> {
                 // Range operators on categorical (string) columns are not meaningful.
@@ -372,7 +375,8 @@ public class BitmapIndexManager {
     private List<Integer> allRows(String tableName) {
         int count = tableRowCounts.getOrDefault(tableName, 0);
         List<Integer> all = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) all.add(i);
+        for (int i = 0; i < count; i++)
+            all.add(i);
         return all;
     }
 
@@ -388,24 +392,26 @@ public class BitmapIndexManager {
      * Gate 2 — cardinality check.
      *
      * Returns true (= should NOT build/keep the index) if either:
-     *   a) distinctCount > MAX_DISTINCT_VALUES  (absolute cap, always applied)
-     *   b) The table has >= MIN_ROWS_FOR_RATIO rows AND
-     *      (distinctCount / totalRows) > MAX_CARDINALITY_RATIO
+     * a) distinctCount > MAX_DISTINCT_VALUES (absolute cap, always applied)
+     * b) The table has >= MIN_ROWS_FOR_RATIO rows AND
+     * (distinctCount / totalRows) > MAX_CARDINALITY_RATIO
      *
      * Example outcomes with defaults (MAX_DISTINCT=100, RATIO=0.50, MIN_ROWS=20):
-     *   Department: 3 distinct / 10,000 rows  → ratio 0.0003 → INDEX BUILT
-     *   Status:     2 distinct / 5,000 rows   → ratio 0.0004 → INDEX BUILT
-     *   Name:      9,800 distinct / 10,000 rows → exceeds absolute cap 100 → SKIPPED
-     *   Tag:        60 distinct / 80 rows      → ratio 0.75 > 0.50 → SKIPPED
-     *   Tag:        60 distinct / 15 rows      → ratio check skipped (< MIN_ROWS) → INDEX BUILT
+     * Department: 3 distinct / 10,000 rows → ratio 0.0003 → INDEX BUILT
+     * Status: 2 distinct / 5,000 rows → ratio 0.0004 → INDEX BUILT
+     * Name: 9,800 distinct / 10,000 rows → exceeds absolute cap 100 → SKIPPED
+     * Tag: 60 distinct / 80 rows → ratio 0.75 > 0.50 → SKIPPED
+     * Tag: 60 distinct / 15 rows → ratio check skipped (< MIN_ROWS) → INDEX BUILT
      */
     private boolean exceedsCardinalityThreshold(int distinctCount, int totalRows) {
         // Absolute cap — always enforced
-        if (distinctCount > MAX_DISTINCT_VALUES) return true;
+        if (distinctCount > MAX_DISTINCT_VALUES)
+            return true;
         // Ratio cap — only enforced once table is large enough to be meaningful
         if (totalRows >= MIN_ROWS_FOR_RATIO) {
             double ratio = (double) distinctCount / totalRows;
-            if (ratio > MAX_CARDINALITY_RATIO) return true;
+            if (ratio > MAX_CARDINALITY_RATIO)
+                return true;
         }
         return false;
     }

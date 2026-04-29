@@ -9,12 +9,6 @@ public class ColumnSchema {
     private String type; // e.g., INT, STRING
     private List<String> constraints; // PRIMARY_KEY, NOT_NULL, UNIQUE
 
-    /**
-     * Types that are inherently categorical (low-cardinality, string-based or boolean).
-     * Bitmap indexes are ONLY built for these types.
-     * Numeric types (INT, DOUBLE, FLOAT, LONG, etc.) are excluded because
-     * continuous values explode the number of distinct bitmap vectors.
-     */
     private static final Set<String> CATEGORICAL_TYPES = Set.of(
         "STRING", "VARCHAR", "TEXT", "CHAR",
         "BOOLEAN", "BOOL"

@@ -1,8 +1,5 @@
 package cdb.query.querytypes;
 
-/**
- * Represents a single predicate in a WHERE clause, e.g. "salary > 30000".
- */
 public class WhereCondition {
     private final String column;
     private final String op;

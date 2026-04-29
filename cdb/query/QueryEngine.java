@@ -8,7 +8,9 @@ import cdb.storage.StorageEngine;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class QueryEngine {
     private SchemaManager schemaManager;
@@ -192,14 +194,6 @@ public class QueryEngine {
     // Core filtering — WhereClause aware
     // -------------------------------------------------------------------------
 
-    /**
-     * Returns the list of row indexes that satisfy the given WhereClause.
-     *
-     * Strategy:
-     *  1. Try the bitmap index (fast path).
-     *  2. If any condition is not indexed, fall back to a sequential scan over
-     *     all conditions using the logical operator (AND / OR).
-     */
     private List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema,
                                                 WhereClause whereClause) throws IOException {
 
@@ -217,44 +211,54 @@ public class QueryEngine {
         }
 
         // ---- Sequential scan fallback ----
-        boolean isAnd = whereClause.getLogicalOp() == WhereClause.LogicalOp.AND;
-        List<WhereCondition> conditions = whereClause.getConditions();
+        List<WhereCondition> allConditions = whereClause.getAllConditions();
 
         // Determine scan length from the first condition's column
         // (all columns have the same number of rows in a columnar store)
-        String firstCol = conditions.get(0).getColumn();
+        String firstCol = allConditions.get(0).getColumn();
         List<String> firstColData = storageEngine.readColumn(tableName, firstCol);
         int rowCount = firstColData.size();
 
-        // Pre-load column data for every condition
-        List<List<String>> colDataList = new ArrayList<>();
-        for (WhereCondition cond : conditions) {
-            colDataList.add(storageEngine.readColumn(tableName, cond.getColumn()));
+        // Pre-load column data for every unique condition's column
+        Map<String, List<String>> colDataMap = new HashMap<>();
+        for (WhereCondition cond : allConditions) {
+            if (!colDataMap.containsKey(cond.getColumn())) {
+                colDataMap.put(cond.getColumn(), storageEngine.readColumn(tableName, cond.getColumn()));
+            }
         }
 
         List<Integer> result = new ArrayList<>();
         for (int i = 0; i < rowCount; i++) {
-            boolean rowMatches = isAnd; // AND starts true, OR starts false
-            for (int c = 0; c < conditions.size(); c++) {
-                WhereCondition cond = conditions.get(c);
-                List<String> colData = colDataList.get(c);
-                String cellVal = i < colData.size() ? colData.get(i) : "null";
-                boolean condMatch = evaluateCondition(cellVal, cond.getOp(), cond.getValue());
-                if (isAnd) {
-                    rowMatches = rowMatches && condMatch;
-                    if (!rowMatches) break; // short-circuit
-                } else {
-                    rowMatches = rowMatches || condMatch;
-                    if (rowMatches) break;  // short-circuit
+            boolean rowMatchesAnyOrGroup = false;
+
+            // DNF logic: True if ANY OR-group is true
+            for (List<WhereCondition> andGroup : whereClause.getOrGroups()) {
+                boolean andGroupMatches = true; // True if ALL conditions in this AND-group are true
+                
+                for (WhereCondition cond : andGroup) {
+                    List<String> colData = colDataMap.get(cond.getColumn());
+                    String cellVal = i < colData.size() ? colData.get(i) : "null";
+                    boolean condMatch = evaluateCondition(cellVal, cond.getOp(), cond.getValue());
+                    
+                    if (!condMatch) {
+                        andGroupMatches = false;
+                        break; // short-circuit this AND-group
+                    }
+                }
+                
+                if (andGroupMatches) {
+                    rowMatchesAnyOrGroup = true;
+                    break; // short-circuit the outer OR logic
                 }
             }
-            if (rowMatches) result.add(i);
+            
+            if (rowMatchesAnyOrGroup) {
+                result.add(i);
+            }
         }
 
-        String opLabel = isAnd ? "AND" : "OR";
         System.out.println("[Sequential Scan] Used full scan for " + tableName
-                + " (" + conditions.size() + " condition(s) joined by " + opLabel
-                + "), matched " + result.size() + " logical row(s).");
+                + " (mixed AND/OR logic), matched " + result.size() + " logical row(s).");
         return result;
     }
 
@@ -336,7 +340,7 @@ public class QueryEngine {
     /** Validates that every column referenced in a WHERE clause exists in the schema. */
     private void validateWhereClause(WhereClause whereClause, TableSchema schema) {
         if (whereClause == null) return;
-        for (WhereCondition cond : whereClause.getConditions()) {
+        for (WhereCondition cond : whereClause.getAllConditions()) {
             if (schema.getColumn(cond.getColumn()) == null) {
                 throw new IllegalArgumentException("Filter column not found: " + cond.getColumn());
             }

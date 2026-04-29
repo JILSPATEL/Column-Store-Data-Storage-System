@@ -4,27 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 
-/**
- * Stress test for the CDB Column-Store system — Two-Gate Bitmap Index Policy.
- *
- * GATE 1 (type): Only categorical types (VARCHAR, STRING, BOOLEAN) get indexed.
- * GATE 2 (cardinality): Even categorical columns are skipped/evicted if
- *   distinct values exceed MAX_DISTINCT_VALUES (100) OR
- *   distinct/total ratio exceeds MAX_CARDINALITY_RATIO (0.50) once >= 20 rows exist.
- *
- * Tests:
- *  1.  Gate 1: numeric columns never indexed (INT, DOUBLE)
- *  2.  Gate 1: categorical columns ARE indexed when cardinality is low
- *  3.  Gate 2 at build time: high-cardinality VARCHAR column skipped
- *  4.  Gate 2 at insert time: index evicted when cardinality grows past threshold
- *  5.  Low-cardinality categorical WHERE uses fast bitmap path
- *  6.  High-cardinality categorical WHERE falls back to sequential scan
- *  7.  Numeric WHERE always sequential scan
- *  8.  UPDATE correctly moves bitmap bit
- *  9.  DELETE + rebuild keeps index consistent
- * 10.  10,000-row performance: bitmap vs sequential timing
- * 11.  Correctness: sequential scan row count validation
- */
 public class StressTest {
 
     private static int passed = 0;
@@ -199,6 +178,39 @@ public class StressTest {
             assertContains("Exactly 4999 rows", seqCheck, "4999 rows");
         }
 
+        // ── TEST GROUP G: Mixed AND/OR logic ──────────────────────────────
+        {
+            DatabaseAPI db = freshDB("databases/st_mixed_logic");
+            exec(db, "CREATE TABLE M (ID INT PRIMARY_KEY, Shape VARCHAR, Color VARCHAR)");
+            exec(db, "INSERT INTO M VALUES (1, SQUARE, RED)");
+            exec(db, "INSERT INTO M VALUES (2, CIRCLE, BLUE)");
+            exec(db, "INSERT INTO M VALUES (3, SQUARE, BLUE)");
+            exec(db, "INSERT INTO M VALUES (4, TRIANGLE, RED)");
+
+            section("Test 12 — Mixed AND/OR on Bitmap Fast Path");
+            // OR logic precedence test: (Shape = SQUARE AND Color = RED) OR (Color = BLUE)
+            // Should match: 1 (SQUARE RED), 2 (CIRCLE BLUE), 3 (SQUARE BLUE). Should NOT match 4.
+            String r1 = exec(db, "SELECT ID FROM M WHERE Shape = SQUARE AND Color = RED OR Color = BLUE");
+            assertContains("Matches Row 1 (SQUARE AND RED)", r1, "1");
+            assertContains("Matches Row 2 (OR BLUE)", r1, "2");
+            assertContains("Matches Row 3 (OR BLUE)", r1, "3");
+            assertNotContains("Does not match Row 4", r1, "4");
+
+            section("Test 13 — Mixed AND/OR on Sequential Scan Fallback");
+            exec(db, "CREATE TABLE M2 (ID INT PRIMARY_KEY, Shape VARCHAR, Size INT)");
+            exec(db, "INSERT INTO M2 VALUES (1, SQUARE, 10)");
+            exec(db, "INSERT INTO M2 VALUES (2, CIRCLE, 20)");
+            exec(db, "INSERT INTO M2 VALUES (3, SQUARE, 20)");
+            exec(db, "INSERT INTO M2 VALUES (4, TRIANGLE, 10)");
+
+            // Numeric column forces sequential scan
+            String r2 = exec(db, "SELECT ID FROM M2 WHERE Shape = SQUARE AND Size = 10 OR Size = 20");
+            assertContains("Matches Row 1 (SQUARE AND 10)", r2, "1");
+            assertContains("Matches Row 2 (OR 20)", r2, "2");
+            assertContains("Matches Row 3 (OR 20)", r2, "3");
+            assertNotContains("Does not match Row 4", r2, "4");
+        }
+
         // ── Summary ───────────────────────────────────────────────────────
         System.out.println();
         System.out.println("=".repeat(65));
@@ -207,7 +219,7 @@ public class StressTest {
 
         // Cleanup
         for (String d : new String[]{"st_gate1","st_gate2_build","st_gate2_insert",
-                                     "st_routing","st_dml","st_perf"}) {
+                                     "st_routing","st_dml","st_perf","st_mixed_logic"}) {
             deleteDirectory(new File("databases/" + d));
         }
 
