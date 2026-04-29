@@ -10,9 +10,8 @@ public class ColumnSchema {
     private List<String> constraints; // PRIMARY_KEY, NOT_NULL, UNIQUE
 
     private static final Set<String> CATEGORICAL_TYPES = Set.of(
-        "STRING", "VARCHAR", "TEXT", "CHAR",
-        "BOOLEAN", "BOOL"
-    );
+            "STRING", "VARCHAR", "TEXT", "CHAR",
+            "BOOLEAN", "BOOL");
 
     public ColumnSchema(String name, String type) {
         this.name = name;
@@ -24,8 +23,13 @@ public class ColumnSchema {
         this.constraints.add(constraint);
     }
 
-    public String getName() { return name; }
-    public String getType() { return type; }
+    public String getName() {
+        return name;
+    }
+
+    public String getType() {
+        return type;
+    }
 
     /**
      * Returns true if this column's type is categorical (string or boolean),
@@ -39,7 +43,10 @@ public class ColumnSchema {
     public boolean hasConstraint(String constraint) {
         return constraints.contains(constraint);
     }
-    public List<String> getConstraints() { return constraints; }
+
+    public List<String> getConstraints() {
+        return constraints;
+    }
 
     @Override
     public String toString() {
@@ -50,4 +57,5 @@ public class ColumnSchema {
         }
         return sb.toString();
     }
+
 }

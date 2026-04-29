@@ -137,7 +137,8 @@ public class CLIClient {
                 } else {
                     String tableName = line.substring("SHOW BITMAP INDEX".length()).trim();
                     if (tableName.isEmpty()) {
-                        System.out.println("Error: Please provide a table name. Example: SHOW BITMAP INDEX <tableName>");
+                        System.out
+                                .println("Error: Please provide a table name. Example: SHOW BITMAP INDEX <tableName>");
                     } else {
                         System.out.println(db.dumpIndex(tableName));
                     }
@@ -262,7 +263,7 @@ public class CLIClient {
 
     private static void printWelcome() {
         System.out.println("==================================================");
-        System.out.println("       Antigravity Column-Store DB (CDB)");
+        System.out.println("              Column-Store DB (CDB)");
         System.out.println("==================================================");
         System.out.println("Type 'HELP' for a list of commands.");
         System.out.println();
@@ -302,9 +303,11 @@ public class CLIClient {
         try {
             String json = new String(java.nio.file.Files.readAllBytes(schemaFile.toPath()));
             // Extract column info using regex (since we don't have a JSON parser)
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"name\"\\s*:\\s*\"(.*?)\".*?\"type\"\\s*:\\s*\"(.*?)\".*?\"constraints\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL);
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                    "\"name\"\\s*:\\s*\"(.*?)\".*?\"type\"\\s*:\\s*\"(.*?)\".*?\"constraints\"\\s*:\\s*\\[(.*?)\\]",
+                    java.util.regex.Pattern.DOTALL);
             java.util.regex.Matcher m = p.matcher(json);
-            
+
             StringBuilder sb = new StringBuilder();
             sb.append("Table Schema for '").append(tableName).append("':\n");
             sb.append(String.format("%-20s | %-12s | %s\n", "Column", "Type", "Constraints"));

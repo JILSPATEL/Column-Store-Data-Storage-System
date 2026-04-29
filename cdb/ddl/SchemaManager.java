@@ -8,9 +8,10 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
+// Instantiated per database level.
 public class SchemaManager {
     private String metadataDir;
-    private Map<String, TableSchema> schemas;
+    private Map<String, TableSchema> schemas; // Table name -> Table schema.
 
     public SchemaManager(String dataDir) {
         this.metadataDir = dataDir + "/metadata";
@@ -55,7 +56,7 @@ public class SchemaManager {
                     i += 2;
                 }
             } else if (currentColumn != null) {
-                // Must be a constraint
+                // Must be a constraint otherwise.
                 currentColumn.addConstraint(tokens[i]);
             }
         }

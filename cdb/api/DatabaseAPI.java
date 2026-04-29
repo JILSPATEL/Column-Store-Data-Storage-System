@@ -9,24 +9,24 @@ import cdb.storage.BinaryStorageEngine;
 import cdb.query.BitmapIndexManager;
 
 public class DatabaseAPI {
-    private SchemaManager schemaManager;
-    private StorageEngine storageEngine;
-    private QueryParser queryParser;
-    private QueryEngine queryEngine;
-    private BitmapIndexManager indexManager;
+    private SchemaManager schemaManager; // deals with schema files.
+    private StorageEngine storageEngine; // actually persists the data.
+    private QueryParser queryParser; // parses the query.
+    private QueryEngine queryEngine; // executes the query.
+    private BitmapIndexManager indexManager; // creates bitmap indexes for tables.
 
     public DatabaseAPI(String dataDir) {
         this.schemaManager = new SchemaManager(dataDir);
         this.storageEngine = new BinaryStorageEngine(dataDir);
         this.queryParser = new QueryParser();
-        
+
         this.indexManager = new BitmapIndexManager(this.storageEngine, this.schemaManager);
         try {
             this.indexManager.initializeAll();
-        } catch(java.io.IOException e) {
+        } catch (java.io.IOException e) {
             System.err.println("Failed to initialize indexes: " + e.getMessage());
         }
-        
+
         this.queryEngine = new QueryEngine(this.schemaManager, this.storageEngine, this.indexManager);
     }
 
@@ -38,6 +38,7 @@ public class DatabaseAPI {
             return "Execution Error: " + e.getMessage();
         }
     }
+
     public String dumpIndex(String tableName) {
         return indexManager.dumpIndex(tableName);
     }
