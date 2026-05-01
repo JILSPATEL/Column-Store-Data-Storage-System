@@ -120,3 +120,4 @@ public class BinaryStorageEngine implements StorageEngine {
         FileUtils.deleteDirectory(tableDir);
     }
 }
+

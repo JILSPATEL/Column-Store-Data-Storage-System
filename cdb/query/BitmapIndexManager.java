@@ -95,8 +95,6 @@ public class BitmapIndexManager {
 
             // ── Gate 1: type gate ────────────────────────────────────────────
             if (!col.isCategorical()) {
-                System.out.println("[Bitmap Index] Skipped '" + tableName + "." + col.getName()
-                        + "' — Gate 1: type '" + col.getType() + "' is not categorical.");
                 continue;
             }
 
@@ -110,9 +108,6 @@ public class BitmapIndexManager {
 
             // ── Gate 2: cardinality guard ────────────────────────────────────
             if (exceedsCardinalityThreshold(distinctCount, totalRows)) {
-                System.out.println("[Bitmap Index] Skipped '" + tableName + "." + colName
-                        + "' — Gate 2: high cardinality (" + distinctCount
-                        + " distinct / " + totalRows + " rows). Queries will use sequential scan.");
                 // Record the eviction so insertRow never recreates this index.
                 evictedColumns.computeIfAbsent(tableName, k -> new HashSet<>()).add(colName);
                 continue;
@@ -124,8 +119,6 @@ public class BitmapIndexManager {
                 colIndex.computeIfAbsent(values.get(i), k -> new BitSet()).set(i);
             }
             tableIndexes.put(colName, colIndex);
-            System.out.println("[Bitmap Index] Built index for '" + tableName + "." + colName
-                    + "' (" + distinctCount + " distinct value(s) across " + totalRows + " row(s))");
         }
 
         // If no categorical columns, still record the row count via any column
@@ -186,10 +179,6 @@ public class BitmapIndexManager {
             if (exceedsCardinalityThreshold(colIndex.size(), totalRows)) {
                 tableIndexes.remove(colName);
                 evictedColumns.computeIfAbsent(tableName, k -> new HashSet<>()).add(colName);
-                System.out.println("[Bitmap Index] Evicted index for '" + tableName + "." + colName
-                        + "' — Gate 2: cardinality exceeded after insert ("
-                        + colIndex.size() + " distinct / " + totalRows + " rows)."
-                        + " Column will use sequential scan.");
             }
         }
 
@@ -225,17 +214,6 @@ public class BitmapIndexManager {
     // Query-time filtering
     // -------------------------------------------------------------------------
 
-    /**
-     * Returns matching row indexes for a given WhereClause.
-     *
-     * - If whereClause is null → returns all row indexes (no filter).
-     * - If every condition maps to an indexed (categorical) column → fast bitmap
-     * path.
-     * - If ANY condition references a non-categorical/unindexed column → returns
-     * null,
-     * signalling the QueryEngine to fall back to a sequential scan for the whole
-     * clause.
-     */
     public List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema,
             WhereClause whereClause) {
         if (whereClause == null || whereClause.isEmpty()) {
@@ -263,8 +241,6 @@ public class BitmapIndexManager {
 
         List<Integer> result = toList(finalResult);
 
-        System.out.println("[Bitmap Index] Fast lookup on '" + tableName
-                + "' (mixed AND/OR logic), matched " + result.size() + " row(s).");
         return result;
     }
 
@@ -283,8 +259,6 @@ public class BitmapIndexManager {
             return null;
 
         List<Integer> result = toList(bits);
-        System.out.println("[Bitmap Index] Fast lookup on '" + tableName + "." + filterCol
-                + "' (" + filterOp + " " + filterVal + "), matched " + result.size() + " row(s).");
         return result;
     }
 
@@ -363,9 +337,6 @@ public class BitmapIndexManager {
             default -> {
                 // Range operators on categorical (string) columns are not meaningful.
                 // Return an empty BitSet — callers will get 0 results, which is correct.
-                System.out.println("[Bitmap Index] Warning: range operator '" + filterOp
-                        + "' on categorical column '" + cond.getColumn()
-                        + "' is not supported. Returning empty result.");
             }
         }
 

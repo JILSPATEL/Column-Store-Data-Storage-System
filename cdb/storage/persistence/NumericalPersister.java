@@ -147,3 +147,4 @@ public class NumericalPersister extends BasePersister {
         }
     }
 }
+

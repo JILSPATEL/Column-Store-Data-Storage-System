@@ -257,8 +257,8 @@ public class QueryEngine {
             }
         }
 
-        System.out.println("[Sequential Scan] Used full scan for " + tableName
-                + " (mixed AND/OR logic), matched " + result.size() + " logical row(s).");
+        // System.out.println("[Sequential Scan] Used full scan for " + tableName
+        //         + " (mixed AND/OR logic), matched " + result.size() + " logical row(s).");
         return result;
     }
 

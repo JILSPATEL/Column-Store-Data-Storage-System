@@ -81,3 +81,4 @@ public abstract class BasePersister implements ColumnPersister {
         }
     }
 }
+
