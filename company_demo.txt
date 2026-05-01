@@ -1,0 +1,32 @@
+CREATE DATABASE company_db
+USE DATABASE company_db
+
+CREATE TABLE departments (id INT PRIMARY_KEY, name STRING, location STRING)
+INSERT INTO departments VALUES (1, "Engineering", "New York")
+INSERT INTO departments VALUES (2, "Marketing", "London")
+
+CREATE TABLE projects (id INT PRIMARY_KEY, name STRING, budget DOUBLE, status STRING)
+INSERT INTO projects VALUES (101, "Apollo", 50000.0, "Active")
+INSERT INTO projects VALUES (102, "Zeus", 75000.0, "Active")
+INSERT INTO projects VALUES (103, "Hermes", 30000.0, "Completed")
+INSERT INTO projects VALUES (104, "Ares", 120000.0, "Planning")
+
+CREATE TABLE employees (id INT PRIMARY_KEY, name STRING, dept_id INT, role STRING, salary DOUBLE)
+INSERT INTO employees VALUES (1, "Alice", 1, "Developer", 85000.0)
+INSERT INTO employees VALUES (2, "Bob", 1, "Senior Developer", 110000.0)
+INSERT INTO employees VALUES (3, "Charlie", 2, "Manager", 95000.0)
+INSERT INTO employees VALUES (4, "David", 1, "QA", 65000.0)
+INSERT INTO employees VALUES (5, "Eve", 2, "Designer", 72000.0)
+INSERT INTO employees VALUES (6, "Frank", 1, "DevOps", 98000.0)
+INSERT INTO employees VALUES (7, "Grace", 2, "Marketing Specialist", 60000.0)
+INSERT INTO employees VALUES (8, "Hank", 1, "Architect", 135000.0)
+
+SELECT * FROM departments
+SELECT * FROM projects
+SELECT * FROM employees
+
+SELECT name, salary FROM employees WHERE dept_id = 1 AND salary > 90000.0
+UPDATE projects SET status = "Completed" WHERE id = 101
+SELECT * FROM projects
+DELETE FROM employees WHERE role = "QA"
+SELECT * FROM employees

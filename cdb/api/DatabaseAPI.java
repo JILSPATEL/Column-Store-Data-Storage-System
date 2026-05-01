@@ -9,11 +9,11 @@ import cdb.storage.BinaryStorageEngine;
 import cdb.query.BitmapIndexManager;
 
 public class DatabaseAPI {
-    private SchemaManager schemaManager; // deals with schema files.
-    private StorageEngine storageEngine; // actually persists the data.
-    private QueryParser queryParser; // parses the query.
-    private QueryEngine queryEngine; // executes the query.
-    private BitmapIndexManager indexManager; // creates bitmap indexes for tables.
+    private SchemaManager schemaManager;
+    private StorageEngine storageEngine;
+    private QueryParser queryParser;
+    private QueryEngine queryEngine;
+    private BitmapIndexManager indexManager;
 
     public DatabaseAPI(String dataDir) {
         this.schemaManager = new SchemaManager(dataDir);

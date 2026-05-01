@@ -10,7 +10,6 @@ import java.util.regex.Pattern;
 
 public class QueryParser {
 
-    // Matches a single condition: col op val  (op is =, >, <, >=, <=, !=)
     private static final Pattern CONDITION_PAT =
             Pattern.compile("(\\w+)\\s*(>=|<=|!=|[=><])\\s*([^\\s]+(?:\\s+[^\\s]+)*)");
 
@@ -29,10 +28,6 @@ public class QueryParser {
         }
         throw new IllegalArgumentException("Unsupported query: " + query);
     }
-
-    // -------------------------------------------------------------------------
-    // WHERE clause parsing
-    // -------------------------------------------------------------------------
 
     private String[] splitWhereClause(String query) {
         String upper = query.toUpperCase();
@@ -76,10 +71,6 @@ public class QueryParser {
 
         return new WhereClause(orGroups);
     }
-
-    // -------------------------------------------------------------------------
-    // Individual query parsers
-    // -------------------------------------------------------------------------
 
     private CreateTableQuery parseCreateTable(String query) {
         Pattern pattern = Pattern.compile("CREATE\\s+TABLE\\s+(\\w+)\\s*\\((.*)\\)", Pattern.CASE_INSENSITIVE);

@@ -5,7 +5,7 @@ import java.util.List;
 public class SelectQuery implements Query {
     private final String tableName;
     private final List<String> columns;
-    private final WhereClause whereClause; // null means no filter
+    private final WhereClause whereClause;
 
     public SelectQuery(String tableName, List<String> columns, WhereClause whereClause) {
         this.tableName   = tableName;
@@ -13,7 +13,6 @@ public class SelectQuery implements Query {
         this.whereClause = whereClause;
     }
 
-    /** Legacy single-condition constructor for backward compatibility. */
     public SelectQuery(String tableName, List<String> columns,
                        String filterColumn, String filterOp, String filterValue) {
         this.tableName = tableName;
@@ -30,7 +29,9 @@ public class SelectQuery implements Query {
     public List<String> getColumns()   { return columns; }
     public WhereClause getWhereClause(){ return whereClause; }
 
-    // ---- Legacy getters (single-condition convenience) ----
+    // -------------------------------------------------------------------------
+    // Legacy getters (single-condition convenience)
+    // -------------------------------------------------------------------------
     public String getFilterColumn() {
         return (whereClause != null && !whereClause.getAllConditions().isEmpty())
                 ? whereClause.getAllConditions().get(0).getColumn() : null;

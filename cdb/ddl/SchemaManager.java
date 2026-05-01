@@ -8,10 +8,9 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
-// Instantiated per database level.
 public class SchemaManager {
     private String metadataDir;
-    private Map<String, TableSchema> schemas; // Table name -> Table schema.
+    private Map<String, TableSchema> schemas;
 
     public SchemaManager(String dataDir) {
         this.metadataDir = dataDir + "/metadata";

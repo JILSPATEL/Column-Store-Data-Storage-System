@@ -34,32 +34,39 @@ public class CLIClient {
             if (line.isEmpty())
                 continue;
 
-            // Add to history
             if (history.isEmpty() || !history.get(history.size() - 1).equals(line)) {
                 history.add(line);
             }
 
             String upperLine = line.toUpperCase();
 
-            // ── EXIT ──────────────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // EXIT
+            // -------------------------------------------------------------------------
             if (upperLine.equals("EXIT") || upperLine.equals("QUIT")) {
                 break;
             }
 
-            // ── HELP ──────────────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // HELP
+            // -------------------------------------------------------------------------
             if (upperLine.equals("HELP")) {
                 printHelp();
                 continue;
             }
 
-            // ── CLEAR ─────────────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // CLEAR
+            // -------------------------------------------------------------------------
             if (upperLine.equals("CLEAR") || upperLine.equals("CLS")) {
                 System.out.print("\033[H\033[2J");
                 System.out.flush();
                 continue;
             }
 
-            // ── HISTORY ───────────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // HISTORY
+            // -------------------------------------------------------------------------
             if (upperLine.equals("HISTORY")) {
                 System.out.println("Command History:");
                 for (int i = 0; i < history.size(); i++) {
@@ -69,7 +76,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── Re-run from History (!n) ──────────────────────────────────
+            // -------------------------------------------------------------------------
+            // Re-run from History (!n)
+            // -------------------------------------------------------------------------
             if (line.startsWith("!") && line.length() > 1) {
                 try {
                     int index = Integer.parseInt(line.substring(1)) - 1;
@@ -77,22 +86,21 @@ public class CLIClient {
                         line = history.get(index);
                         System.out.println("Executing: " + line);
                         upperLine = line.toUpperCase();
-                        // Fall through to execute the recalled command
                     } else {
                         System.out.println("Error: History index out of range.");
                         continue;
                     }
                 } catch (NumberFormatException e) {
-                    // Ignore, maybe it's not a history recall
                 }
             }
 
-            // ── SHOW DATABASES ────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // SHOW DATABASES
+            // -------------------------------------------------------------------------
             if (line.equalsIgnoreCase("SHOW DATABASES")) {
                 File[] dirs = root.listFiles(File::isDirectory);
                 if (dirs == null || dirs.length == 0) {
                     System.out.println("No databases found.");
-                    // System.out.println("Hint: use CREATE DATABASE <name> to create one.");
                 } else {
                     System.out.println("+--------------------------+");
                     System.out.println("| Databases                |");
@@ -107,7 +115,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── SHOW TABLES ───────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // SHOW TABLES
+            // -------------------------------------------------------------------------
             if (line.equalsIgnoreCase("SHOW TABLES")) {
                 if (currentDB == null) {
                     System.out.println("No database selected. Use: USE DATABASE <name>");
@@ -130,7 +140,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── SHOW BITMAP INDEX <name> ──────────────────────────────────
+            // -------------------------------------------------------------------------
+            // SHOW BITMAP INDEX <name>
+            // -------------------------------------------------------------------------
             if (line.toUpperCase().startsWith("SHOW BITMAP INDEX")) {
                 if (db == null) {
                     System.out.println("No database selected. Use: USE DATABASE <name>");
@@ -147,7 +159,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── CREATE DATABASE <name> ────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // CREATE DATABASE <name>
+            // -------------------------------------------------------------------------
             if (line.toUpperCase().startsWith("CREATE DATABASE ")) {
                 String dbName = line.substring("CREATE DATABASE ".length()).trim();
                 if (dbName.isEmpty()) {
@@ -161,14 +175,14 @@ public class CLIClient {
                 } else {
                     dbDir.mkdirs();
                     System.out.println("Database '" + dbName + "' created successfully.");
-                    // System.out.println("Hint: type USE DATABASE " + dbName + " to start using
-                    // it.");
                 }
                 System.out.println();
                 continue;
             }
 
-            // ── USE DATABASE <name> ───────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // USE DATABASE <name>
+            // -------------------------------------------------------------------------
             if (line.toUpperCase().startsWith("USE DATABASE ")) {
                 String dbName = line.substring("USE DATABASE ".length()).trim();
                 if (dbName.isEmpty()) {
@@ -179,7 +193,6 @@ public class CLIClient {
                 File dbDir = new File(DATABASES_ROOT + "/" + dbName);
                 if (!dbDir.exists()) {
                     System.out.println("Error: Database '" + dbName + "' does not exist.");
-                    // System.out.println("Hint: CREATE DATABASE " + dbName);
                 } else {
                     db = new DatabaseAPI(DATABASES_ROOT + "/" + dbName);
                     currentDB = dbName;
@@ -189,7 +202,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── DESCRIBE <table_name> ─────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // DESCRIBE <table_name>
+            // -------------------------------------------------------------------------
             if (upperLine.startsWith("DESCRIBE ")) {
                 if (db == null) {
                     System.out.println("No database selected.");
@@ -201,7 +216,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── DROP TABLE <table_name> ───────────────────────────────────
+            // -------------------------------------------------------------------------
+            // DROP TABLE <table_name>
+            // -------------------------------------------------------------------------
             if (upperLine.startsWith("DROP TABLE ")) {
                 if (db == null) {
                     System.out.println("No database selected.");
@@ -213,7 +230,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── DROP DATABASE <name> ──────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // DROP DATABASE <name>
+            // -------------------------------------------------------------------------
             if (upperLine.startsWith("DROP DATABASE ")) {
                 String dbName = line.substring(14).trim();
                 File dbDir = new File(DATABASES_ROOT + "/" + dbName);
@@ -231,7 +250,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── RELOAD ────────────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // RELOAD
+            // -------------------------------------------------------------------------
             if (upperLine.equals("RELOAD")) {
                 if (db == null) {
                     System.out.println("No database selected.");
@@ -247,7 +268,9 @@ public class CLIClient {
                 continue;
             }
 
-            // ── ColSQL commands ──────────────────────────────────────────────
+            // -------------------------------------------------------------------------
+            // ColSQL commands
+            // -------------------------------------------------------------------------
             if (db == null) {
                 System.out.println("No database selected. Use: USE DATABASE <name>");
                 System.out.println();

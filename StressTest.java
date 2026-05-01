@@ -14,7 +14,9 @@ public class StressTest {
         System.out.println("  CDB Two-Gate Bitmap Index Stress Test");
         System.out.println("=".repeat(65));
 
-        // ── TEST GROUP A: Gate 1 — Type gate ─────────────────────────────
+        // -------------------------------------------------------------------------
+        // TEST GROUP A: Gate 1 — Type gate
+        // -------------------------------------------------------------------------
         {
             DatabaseAPI db = freshDB("databases/st_gate1");
             exec(db, "CREATE TABLE T (ID INT PRIMARY_KEY, Dept VARCHAR, Score DOUBLE, Active BOOLEAN)");
@@ -33,7 +35,9 @@ public class StressTest {
             assertContains("Active in index", idx, "Column: Active");
         }
 
-        // ── TEST GROUP B: Gate 2 — Cardinality gate (build-time) ─────────
+        // -------------------------------------------------------------------------
+        // TEST GROUP B: Gate 2 — Cardinality gate (build-time)
+        // -------------------------------------------------------------------------
         {
             // Build a table where Name is VARCHAR but ALL values are unique (high cardinality)
             DatabaseAPI db = freshDB("databases/st_gate2_build");
@@ -51,14 +55,11 @@ public class StressTest {
             assertContains("Status (2 values) must still be indexed", idx, "Column: Status");
         }
 
-        // ── TEST GROUP C: Gate 2 — Cardinality gate (insert-time eviction) ─
         {
-            // Start with a low-cardinality Tag column, then insert enough unique tags to evict it
             DatabaseAPI db = freshDB("databases/st_gate2_insert");
             exec(db, "CREATE TABLE Events (ID INT PRIMARY_KEY, Tag VARCHAR, Region VARCHAR)");
 
             section("Test 4a — Gate 2 (insert): index initially built for Tag (low cardinality)");
-            // First 5 rows — only 3 distinct tags, well within limits
             exec(db, "INSERT INTO Events VALUES (1, CLICK, NORTH)");
             exec(db, "INSERT INTO Events VALUES (2, VIEW, SOUTH)");
             exec(db, "INSERT INTO Events VALUES (3, CLICK, EAST)");
@@ -69,20 +70,19 @@ public class StressTest {
             assertContains("Tag indexed initially", idxEarly, "Column: Tag");
 
             section("Test 4b — Gate 2 (insert): eviction when unique Tag values exceed ratio");
-            // Now insert 20 more rows with completely unique tag names so that
-            // distinctTags / totalRows blows past 0.50 threshold once >= 20 rows exist
             for (int i = 6; i <= 25; i++) {
                 exec(db, String.format("INSERT INTO Events VALUES (%d, UNIQUE_TAG_%d, NORTH)", i, i));
             }
 
             String idxLate = db.dumpIndex("Events");
             System.out.println(idxLate);
-            // Tag should now be evicted; Region (5 distinct out of 25) stays
             assertNotContains("Tag evicted after cardinality growth", idxLate, "Column: Tag");
             assertContains("Region still indexed",  idxLate, "Column: Region");
         }
 
-        // ── TEST GROUP D: Query routing ───────────────────────────────────
+        // -------------------------------------------------------------------------
+        // TEST GROUP D: Query routing
+        // -------------------------------------------------------------------------
         {
             DatabaseAPI db = freshDB("databases/st_routing");
             exec(db, "CREATE TABLE Emp (ID INT PRIMARY_KEY, Name VARCHAR, Dept VARCHAR, Age INT)");
@@ -101,10 +101,8 @@ public class StressTest {
             assertNotContains("Alice not IT", r1, "Alice");
 
             section("Test 6 — High-cardinality categorical (Name) falls to sequential scan");
-            // Name has 10 unique values in 10 rows = ratio 1.0 > 0.50, so NOT indexed
             String idxEmp = db.dumpIndex("Emp");
             assertNotContains("Name not indexed (high cardinality)", idxEmp, "Column: Name");
-            // Query still works — sequential scan fallback
             String r2 = exec(db, "SELECT Dept FROM Emp WHERE Name = Alice");
             assertContains("Alice's dept returned via seq scan", r2, "HR");
 
@@ -115,7 +113,9 @@ public class StressTest {
             assertNotContains("Alice age 28 not >40", r3, "Alice");
         }
 
-        // ── TEST GROUP E: UPDATE / DELETE consistency ─────────────────────
+        // -------------------------------------------------------------------------
+        // TEST GROUP E: UPDATE / DELETE consistency
+        // -------------------------------------------------------------------------
         {
             DatabaseAPI db = freshDB("databases/st_dml");
             exec(db, "CREATE TABLE S (ID INT PRIMARY_KEY, Status VARCHAR, Region VARCHAR)");
@@ -129,7 +129,6 @@ public class StressTest {
             assertContains("Row 1 now INACTIVE", afterUpdate, "1");
             assertContains("Row 2 still INACTIVE", afterUpdate, "2");
             String activeRows = exec(db, "SELECT ID FROM S WHERE Status = ACTIVE");
-            // Use "\n1\n" to avoid matching "(1 rows)" in the footer
             assertNotContains("Row 1 no longer ACTIVE", activeRows, "\n1\n");
             assertContains("Row 3 still ACTIVE", activeRows, "3");
 
@@ -142,7 +141,9 @@ public class StressTest {
             assertContains("Row 3 remains", remaining, "3");
         }
 
-        // ── TEST GROUP F: 10k-row performance ────────────────────────────
+        // -------------------------------------------------------------------------
+        // TEST GROUP F: 10k-row performance
+        // -------------------------------------------------------------------------
         {
             section("Test 10 — Mass INSERT: 10,000 rows timing");
             DatabaseAPI db = freshDB("databases/st_perf");
@@ -158,13 +159,11 @@ public class StressTest {
             }
             System.out.printf("  10,000 inserts: %d ms%n", System.currentTimeMillis() - t0);
 
-            // Bitmap path (Type = CLICK — 5 distinct values, very low ratio)
             long t1 = System.currentTimeMillis();
             String bmp = exec(db, "SELECT ID FROM Log WHERE Type = CLICK");
             System.out.printf("  Bitmap  (Type=CLICK):  %d ms, %s%n",
                     System.currentTimeMillis() - t1, extractRowCount(bmp));
 
-            // Sequential path (Score > 2500 — numeric)
             long t2 = System.currentTimeMillis();
             String seq = exec(db, "SELECT ID FROM Log WHERE Score > 2500");
             System.out.printf("  Seq scan (Score>2500): %d ms, %s%n",
@@ -178,7 +177,9 @@ public class StressTest {
             assertContains("Exactly 4999 rows", seqCheck, "4999 rows");
         }
 
-        // ── TEST GROUP G: Mixed AND/OR logic ──────────────────────────────
+        // -------------------------------------------------------------------------
+        // TEST GROUP G: Mixed AND/OR logic
+        // -------------------------------------------------------------------------
         {
             DatabaseAPI db = freshDB("databases/st_mixed_logic");
             exec(db, "CREATE TABLE M (ID INT PRIMARY_KEY, Shape VARCHAR, Color VARCHAR)");
@@ -188,8 +189,6 @@ public class StressTest {
             exec(db, "INSERT INTO M VALUES (4, TRIANGLE, RED)");
 
             section("Test 12 — Mixed AND/OR on Bitmap Fast Path");
-            // OR logic precedence test: (Shape = SQUARE AND Color = RED) OR (Color = BLUE)
-            // Should match: 1 (SQUARE RED), 2 (CIRCLE BLUE), 3 (SQUARE BLUE). Should NOT match 4.
             String r1 = exec(db, "SELECT ID FROM M WHERE Shape = SQUARE AND Color = RED OR Color = BLUE");
             assertContains("Matches Row 1 (SQUARE AND RED)", r1, "1");
             assertContains("Matches Row 2 (OR BLUE)", r1, "2");
@@ -203,7 +202,6 @@ public class StressTest {
             exec(db, "INSERT INTO M2 VALUES (3, SQUARE, 20)");
             exec(db, "INSERT INTO M2 VALUES (4, TRIANGLE, 10)");
 
-            // Numeric column forces sequential scan
             String r2 = exec(db, "SELECT ID FROM M2 WHERE Shape = SQUARE AND Size = 10 OR Size = 20");
             assertContains("Matches Row 1 (SQUARE AND 10)", r2, "1");
             assertContains("Matches Row 2 (OR 20)", r2, "2");
@@ -211,13 +209,14 @@ public class StressTest {
             assertNotContains("Does not match Row 4", r2, "4");
         }
 
-        // ── Summary ───────────────────────────────────────────────────────
+        // -------------------------------------------------------------------------
+        // Summary
+        // -------------------------------------------------------------------------
         System.out.println();
         System.out.println("=".repeat(65));
         System.out.printf("  RESULTS:  %d passed  |  %d failed%n", passed, failed);
         System.out.println("=".repeat(65));
 
-        // Cleanup
         for (String d : new String[]{"st_gate1","st_gate2_build","st_gate2_insert",
                                      "st_routing","st_dml","st_perf","st_mixed_logic"}) {
             deleteDirectory(new File("databases/" + d));
@@ -226,7 +225,9 @@ public class StressTest {
         if (failed > 0) System.exit(1);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
 
     private static DatabaseAPI freshDB(String path) throws Exception {
         deleteDirectory(new File(path));

@@ -4,7 +4,7 @@ public class UpdateQuery implements Query {
     private final String tableName;
     private final String setColumn;
     private final String setValue;
-    private final WhereClause whereClause; // null means no filter (update all)
+    private final WhereClause whereClause;
 
     public UpdateQuery(String tableName, String setColumn, String setValue, WhereClause whereClause) {
         this.tableName   = tableName;
@@ -13,7 +13,6 @@ public class UpdateQuery implements Query {
         this.whereClause = whereClause;
     }
 
-    /** Legacy single-condition constructor for backward compatibility. */
     public UpdateQuery(String tableName, String setColumn, String setValue,
                        String filterColumn, String filterOp, String filterValue) {
         this.tableName = tableName;
@@ -32,7 +31,9 @@ public class UpdateQuery implements Query {
     public String getSetValue()         { return setValue; }
     public WhereClause getWhereClause() { return whereClause; }
 
-    // ---- Legacy getters ----
+    // -------------------------------------------------------------------------
+    // Legacy getters
+    // -------------------------------------------------------------------------
     public String getFilterColumn() {
         return (whereClause != null && !whereClause.getAllConditions().isEmpty())
                 ? whereClause.getAllConditions().get(0).getColumn() : null;

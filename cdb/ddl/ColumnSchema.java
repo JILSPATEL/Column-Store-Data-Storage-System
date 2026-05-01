@@ -6,8 +6,8 @@ import java.util.Set;
 
 public class ColumnSchema {
     private String name;
-    private String type; // e.g., INT, STRING
-    private List<String> constraints; // PRIMARY_KEY, NOT_NULL, UNIQUE
+    private String type;
+    private List<String> constraints;
 
     private static final Set<String> CATEGORICAL_TYPES = Set.of(
             "STRING", "VARCHAR", "TEXT", "CHAR",
@@ -31,11 +31,6 @@ public class ColumnSchema {
         return type;
     }
 
-    /**
-     * Returns true if this column's type is categorical (string or boolean),
-     * meaning it is eligible for a bitmap index.
-     * Returns false for any numeric type (INT, LONG, DOUBLE, FLOAT, etc.).
-     */
     public boolean isCategorical() {
         return CATEGORICAL_TYPES.contains(type.toUpperCase());
     }

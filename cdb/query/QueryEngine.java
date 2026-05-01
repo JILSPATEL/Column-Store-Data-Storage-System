@@ -42,18 +42,12 @@ public class QueryEngine {
         return "Unknown query type";
     }
 
-    // -------------------------------------------------------------------------
-    // CREATE
-    // -------------------------------------------------------------------------
     private String executeCreate(CreateTableQuery q) throws IOException {
         schemaManager.createTable(q.getSchema());
         storageEngine.createTable(q.getSchema());
         return "Table " + q.getSchema().getTableName() + " created successfully.";
     }
 
-    // -------------------------------------------------------------------------
-    // INSERT
-    // -------------------------------------------------------------------------
     private String executeInsert(InsertQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
@@ -72,10 +66,8 @@ public class QueryEngine {
                 throw new IllegalArgumentException("Column " + col.getName() + " cannot be null.");
             }
             
-            // Type validation (Dry run parsing)
             validateType(val, col.getType());
 
-            // Check UNIQUE/PRIMARY_KEY
             if (col.hasConstraint("PRIMARY_KEY") || col.hasConstraint("UNIQUE")) {
                 List<String> existing = storageEngine.readColumn(q.getTableName(), col.getName());
                 if (existing.contains(val)) {
@@ -85,7 +77,6 @@ public class QueryEngine {
             }
         }
 
-        // All validations passed, now append to all columns
         for (int i = 0; i < schema.getColumns().size(); i++) {
             ColumnSchema col = schema.getColumns().get(i);
             storageEngine.appendValue(q.getTableName(), col.getName(), q.getValues().get(i));
@@ -95,9 +86,6 @@ public class QueryEngine {
         return "1 row inserted.";
     }
 
-    // -------------------------------------------------------------------------
-    // SELECT
-    // -------------------------------------------------------------------------
     private String executeSelect(SelectQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
@@ -113,12 +101,10 @@ public class QueryEngine {
             }
         }
 
-        // Validate WHERE columns
         validateWhereClause(q.getWhereClause(), schema);
 
         List<Integer> validRowIndexes = getFilteredRowIndexes(q.getTableName(), schema, q.getWhereClause());
 
-        // Read requested columns
         List<List<String>> columnsData = new ArrayList<>();
         for (String colName : requestedCols) {
             columnsData.add(storageEngine.readColumn(q.getTableName(), colName));
@@ -139,9 +125,6 @@ public class QueryEngine {
         return sb.toString().trim() + "\n(" + validRowIndexes.size() + " rows)";
     }
 
-    // -------------------------------------------------------------------------
-    // UPDATE
-    // -------------------------------------------------------------------------
     private String executeUpdate(UpdateQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
@@ -166,9 +149,6 @@ public class QueryEngine {
         return validRowIndexes.size() + " rows updated.";
     }
 
-    // -------------------------------------------------------------------------
-    // DELETE
-    // -------------------------------------------------------------------------
     private String executeDelete(DeleteQuery q) throws IOException {
         TableSchema schema = schemaManager.getTable(q.getTableName());
         if (schema == null)
@@ -190,10 +170,6 @@ public class QueryEngine {
         return validRowIndexes.size() + " rows deleted.";
     }
 
-    // -------------------------------------------------------------------------
-    // Core filtering — WhereClause aware
-    // -------------------------------------------------------------------------
-
     private List<Integer> getFilteredRowIndexes(String tableName, TableSchema schema,
                                                 WhereClause whereClause) throws IOException {
 
@@ -210,16 +186,15 @@ public class QueryEngine {
             return indexed;
         }
 
-        // ---- Sequential scan fallback ----
+        // -------------------------------------------------------------------------
+        // Sequential scan fallback
+        // -------------------------------------------------------------------------
         List<WhereCondition> allConditions = whereClause.getAllConditions();
 
-        // Determine scan length from the first condition's column
-        // (all columns have the same number of rows in a columnar store)
         String firstCol = allConditions.get(0).getColumn();
         List<String> firstColData = storageEngine.readColumn(tableName, firstCol);
         int rowCount = firstColData.size();
 
-        // Pre-load column data for every unique condition's column
         Map<String, List<String>> colDataMap = new HashMap<>();
         for (WhereCondition cond : allConditions) {
             if (!colDataMap.containsKey(cond.getColumn())) {
@@ -231,9 +206,8 @@ public class QueryEngine {
         for (int i = 0; i < rowCount; i++) {
             boolean rowMatchesAnyOrGroup = false;
 
-            // DNF logic: True if ANY OR-group is true
             for (List<WhereCondition> andGroup : whereClause.getOrGroups()) {
-                boolean andGroupMatches = true; // True if ALL conditions in this AND-group are true
+                boolean andGroupMatches = true;
                 
                 for (WhereCondition cond : andGroup) {
                     List<String> colData = colDataMap.get(cond.getColumn());
@@ -242,13 +216,13 @@ public class QueryEngine {
                     
                     if (!condMatch) {
                         andGroupMatches = false;
-                        break; // short-circuit this AND-group
+                        break;
                     }
                 }
                 
                 if (andGroupMatches) {
                     rowMatchesAnyOrGroup = true;
-                    break; // short-circuit the outer OR logic
+                    break;
                 }
             }
             
@@ -261,10 +235,6 @@ public class QueryEngine {
                 + " (mixed AND/OR logic), matched " + result.size() + " logical row(s).");
         return result;
     }
-
-    // -------------------------------------------------------------------------
-    // Condition evaluator
-    // -------------------------------------------------------------------------
 
     private boolean evaluateCondition(String val1, String op, String val2) {
         try {
@@ -321,11 +291,6 @@ public class QueryEngine {
         return s;
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /** Expands ["*"] to the full ordered list of column names in the schema. */
     private List<String> resolveColumns(List<String> requested, TableSchema schema) {
         if (requested.size() == 1 && requested.get(0).equals("*")) {
             List<String> all = new ArrayList<>();
@@ -337,7 +302,6 @@ public class QueryEngine {
         return requested;
     }
 
-    /** Validates that every column referenced in a WHERE clause exists in the schema. */
     private void validateWhereClause(WhereClause whereClause, TableSchema schema) {
         if (whereClause == null) return;
         for (WhereCondition cond : whereClause.getAllConditions()) {
