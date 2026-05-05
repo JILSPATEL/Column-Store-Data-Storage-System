@@ -1,4 +1,4 @@
-# 🎓 Column-Store Database — Complete Viva Preparation Guide
+# 🎓 Column-Store Database
 
 > **Project**: Column-Store Data Storage System  
 > **Language**: Java (pure Java I/O — no external libraries)  
