@@ -1,4 +1,5 @@
-*.class
+build/
+cdb_cpp/cdb_cli.exe
 cdb_data/
 demo_database_folder/
 my_test_db/

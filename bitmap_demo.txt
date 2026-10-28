@@ -1,7 +1,7 @@
-javac -encoding UTF-8 -d . cdb/ddl/*.java cdb/util/*.java cdb/storage/*.java cdb/query/querytypes/*.java cdb/query/*.java cdb/api/*.java cdb/client/*.java
+C++c -encoding UTF-8 -d . cdb/ddl/*.C++ cdb/util/*.C++ cdb/storage/*.C++ cdb/query/querytypes/*.C++ cdb/query/*.C++ cdb/api/*.C++ cdb/client/*.C++
 
 
-java cdb.client.CLIClient
+C++ C++ CLI
 
 
 use database bittestdb

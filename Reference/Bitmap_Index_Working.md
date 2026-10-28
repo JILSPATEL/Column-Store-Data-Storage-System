@@ -1,7 +1,7 @@
 # Bitmap Index Module — Working (Current Implementation)
 
 ## Overview
-The `BitmapIndexManager` accelerates `WHERE` clause lookups by maintaining in-memory bit-arrays that map each distinct value in a column to the set of rows containing that value. It uses a strict **two-gate policy** to decide which columns to index, preventing both numeric and high-cardinality string columns from blowing up memory.
+The `Bitmap index manager` accelerates `WHERE` clause lookups by maintaining in-memory bit-arrays that map each distinct value in a column to the set of rows containing that value. It uses a strict **two-gate policy** to decide which columns to index, preventing both numeric and high-cardinality string columns from blowing up memory.
 
 ---
 
@@ -15,11 +15,11 @@ The system solves this with two independent gates:
 
 ---
 
-## Gate 1: Type Gate — `ColumnSchema.isCategorical()`
+## Gate 1: Type Gate — `Column schema.isCategorical()`
 
-The **first and unconditional gate**. Implemented in `ColumnSchema.java`:
+The **first and unconditional gate**. Implemented in `C++ column schema`:
 
-```java
+```C++
 private static final Set<String> CATEGORICAL_TYPES = Set.of(
     "STRING", "VARCHAR", "TEXT", "CHAR",
     "BOOLEAN", "BOOL"
@@ -48,7 +48,7 @@ public boolean isCategorical() {
 
 The **second gate**, applied only after Gate 1 passes. Even a `VARCHAR` column gets skipped if its distinct values are too dense:
 
-```java
+```C++
 private static final int    MAX_DISTINCT_VALUES   = 100;
 private static final double MAX_CARDINALITY_RATIO = 0.50;
 private static final int    MIN_ROWS_FOR_RATIO    = 10;
@@ -111,9 +111,9 @@ evictedColumns
 ## Index Lifecycle
 
 ### Startup — `buildIndex(tableName)`
-1. Reads `TableSchema` for the table.
+1. Reads `Table schema` for the table.
 2. For each column, applies **Gate 1** (`isCategorical()`). Numeric types → skip, logged.
-3. Reads all values for categorical columns via `StorageEngine.readColumn()`.
+3. Reads all values for categorical columns via `storage engine.readColumn()`.
 4. Applies **Gate 2** (cardinality check). High-cardinality → skip, logged, added to `evictedColumns`.
 5. Both gates passed → builds `colIndex` HashMap (value → BitSet) by iterating all rows.
 
@@ -131,7 +131,7 @@ Atomic bit move — O(1):
 3. **Set** bit `rowIndex` in `newValue`'s BitSet.
 
 ### DELETE — triggers `buildIndex()` rebuild
-Row deletion shifts all logical indices. `QueryEngine` calls `buildIndex()` after any DELETE. This clears `evictedColumns` for that table and re-evaluates all columns from the current data on disk.
+Row deletion shifts all logical indices. `Query engine` calls `buildIndex()` after any DELETE. This clears `evictedColumns` for that table and re-evaluates all columns from the current data on disk.
 
 ---
 
@@ -154,7 +154,7 @@ Example: `WHERE Department = IT AND Active = true`
 
 ### Case C: ANY condition references an unindexed column → **Sequential Scan Fallback**
 
-If `evaluateConditionWithIndex()` returns `null` for any condition, the entire WHERE clause falls back to a full sequential scan in `QueryEngine`. This handles:
+If `evaluateConditionWithIndex()` returns `null` for any condition, the entire WHERE clause falls back to a full sequential scan in `Query engine`. This handles:
 - Numeric comparisons: `Age > 30`, `Salary >= 50000`
 - Evicted categorical columns: `Name = Alice` (after eviction)
 - Mixed clauses: `Department = IT AND Age > 30` (mixed → full scan)
@@ -187,5 +187,5 @@ For each column in WHERE or schema:
                ▼
   Query: all conditions indexed?
     YES → AND/OR BitSets → row list (fast)
-    NO  → return null → QueryEngine sequential scan (fallback)
+    NO  → return null → Query engine sequential scan (fallback)
 ```

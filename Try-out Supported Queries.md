@@ -9,12 +9,13 @@ Below is an execution trace showcasing the SQL commands, internal processing (li
 
 ---
 ## How To Start Database?
-## COMPILE (one-time setup)
+## BUILD (one-time setup)
 
-> Run from `e:\Column-Store-Data-Storage-System\`
+> Run from the repository root.
 
 ```powershell
-javac -encoding UTF-8 -d . cdb/ddl/*.java cdb/util/*.java cdb/storage/*.java cdb/query/querytypes/*.java cdb/query/*.java cdb/api/*.java cdb/client/*.java
+cmake -S cdb_cpp -B build
+cmake --build build --config Release
 ```
 
 ---
@@ -22,10 +23,11 @@ javac -encoding UTF-8 -d . cdb/ddl/*.java cdb/util/*.java cdb/storage/*.java cdb
 ## START THE DATABASE
 
 ```powershell
-java cdb.client.CLIClient
+.\build\Release\cdb_cli.exe databases
 ```
 
-No arguments needed. A `databases/` folder is auto-created on first run.
+The C++ executable accepts the database root directory as its optional argument.
+A `databases/` folder is auto-created when it does not exist.
 
 ## 1. View All Data
 We have pre-filled our tables with some starter data. Here we retrieve all columns and all rows.
@@ -166,6 +168,98 @@ Pen Pack	300
 Bookshelf	20
 (6 rows)
 ```
+
+## 5. WHERE with AND and OR
+
+The C++ CLI supports multiple conditions. `AND` has higher precedence than
+`OR`, so this query is evaluated as:
+
+```text
+condition_a OR (condition_b AND condition_c)
+```
+
+Use the bundled database values (`Eng`, `HR`, and `Fin`) in these examples:
+
+```sql
+CDB [company_db] > SELECT id, name, department, salary
+                   FROM employees
+                   WHERE department = 'Eng' AND salary >= 90000;
+
+id  name     department  salary
+3   Charlie  Eng         91000
+6   Frank    Eng         95000
+(2 rows)
+```
+
+```sql
+CDB [company_db] > SELECT id, name, department
+                   FROM employees
+                   WHERE department = 'HR' OR department = 'Fin';
+
+id  name    department
+2   Bob     HR
+4   David   Fin
+5   Eve     HR
+7   Grace   Fin
+9   Ivan    HR
+(5 rows)
+```
+
+```sql
+CDB [company_db] > SELECT id, name, salary
+                   FROM employees
+                   WHERE salary > 90000 OR department = 'HR' AND salary < 55000;
+
+id  name     salary
+3   Charlie  91000
+5   Eve      54000
+6   Frank    95000
+(3 rows)
+```
+
+Parentheses are supported in `WHERE` expressions. Without parentheses, `AND`
+is evaluated before `OR`. Each SQL command must be entered as one complete
+line; commands may end with a semicolon, or the semicolon may be omitted.
+
+## 6. UPDATE with WHERE
+
+```sql
+CDB [company_db] > UPDATE employees
+                   SET salary = 88000
+                   WHERE id = 1;
+1 rows updated.
+```
+
+Verify the change:
+
+```sql
+SELECT id, name, salary FROM employees WHERE id = 1;
+```
+
+Restore the original bundled value after the demo:
+
+```sql
+UPDATE employees SET salary = 85000 WHERE id = 1;
+```
+
+## 7. DELETE with WHERE
+
+Use a value that is not part of the bundled data for a safe no-op demo:
+
+```sql
+CDB [company_db] > DELETE FROM employees WHERE id = 999;
+0 rows deleted.
+```
+
+To delete matching rows, first inspect the result with `SELECT`, then run:
+
+```sql
+SELECT id, name FROM employees WHERE department = 'Fin' AND salary < 70000;
+DELETE FROM employees WHERE department = 'Fin' AND salary < 70000;
+```
+
+Deletion uses tombstone records. Do not run the deleting example against the
+bundled database unless you intend to change its sample data.
 
 ---
 

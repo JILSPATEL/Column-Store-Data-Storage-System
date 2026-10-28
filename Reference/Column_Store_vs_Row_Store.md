@@ -21,7 +21,7 @@ Row 3:  [3, "Charlie","Engineering", 90000]
 
 ## 2. Our Column-Store Architecture
 
-In our system, we use a **Column-Store Architecture**. Instead of storing an entire row together, we store **each column in its own separate file**. 
+In our system, we use a **Column-Store Architecture**. Instead of storing an entire row together, we store **each column in its own separate file**.
 
 **How the same data is stored:**
 ```text
@@ -31,7 +31,7 @@ dept.bin:    ["Engineering", "HR", "Engineering"]
 salary.bin:  [80000, 50000, 90000]
 ```
 
-When a user runs an `INSERT` command, the `BinaryStorageEngine` splits the row apart and appends each individual value to its respective `.bin` file.
+When a user runs an `INSERT` command, the `binary storage engine` splits the row apart and appends each individual value to its respective `.bin` file.
 
 ### Why Did We Choose Column-Store?
 
@@ -45,4 +45,4 @@ When a user runs an `INSERT` command, the `BinaryStorageEngine` splits the row a
 
 If the examiner asks: *"Why did you build a Column-Store instead of a normal database?"*
 
-**Answer:** "A traditional row-store saves entire records together, which is great for transactional workloads but terrible for analytics because it reads unnecessary data. Our database is a column-store, meaning every column is an isolated file. This allows our `QueryEngine` to perform targeted reads—only fetching the exact files needed for a query—which dramatically reduces Disk I/O and speeds up execution for analytical queries."
+**Answer:** "A traditional row-store saves entire records together, which is great for transactional workloads but terrible for analytics because it reads unnecessary data. Our database is a column-store, meaning every column is an isolated file. This allows our `query engine` to perform targeted reads—only fetching the exact files needed for a query—which dramatically reduces Disk I/O and speeds up execution for analytical queries."

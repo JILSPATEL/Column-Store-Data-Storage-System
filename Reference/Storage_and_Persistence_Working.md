@@ -1,14 +1,14 @@
 # Storage and Persistence Module Architecture
 
 ## Overview
-The Storage module provides low-level disk I/O operations for reading, appending, updating, and deleting values in a purely columnar format. It completely abstracts away file handling from the QueryEngine.
+The Storage module provides low-level disk I/O operations for reading, appending, updating, and deleting values in a purely columnar format. It completely abstracts away file handling from the Query engine.
 
 ## 1. Columnar Storage Layout
 Instead of storing rows contiguously (like typical relational databases), this system stores each column in its own binary file.
 - Directory Structure: `dataDir / <TableName> / <ColumnName>.dat`
 - **Advantage**: If a query only needs 2 columns out of 100, the system only reads 2 files. CPU cache usage and Disk I/O are optimized.
 
-## 2. Storage Engine (`BinaryStorageEngine.java`)
+## 2. Storage Engine (`C++ binary storage engine`)
 **Core Responsibilities:**
 - **Create Table**: Creates the directory for the table.
 - **Append**: Delegates to the appropriate persister to write a value to the end of the column file.
@@ -23,7 +23,7 @@ To handle different data types optimally, the system uses a hierarchy of Persist
 **Working:**
 - Used for `INT`, `DOUBLE`, `LONG`, etc.
 - Stores values in raw binary formats (e.g., 4 bytes for INT) rather than string representation. This dramatically reduces file size and improves read speeds.
-- Uses `DataOutputStream` and `DataInputStream` or NIO `ByteBuffer` for fixed-length binary encoding.
+- Uses `C++ output stream` and `C++ input stream` or NIO `ByteBuffer` for fixed-length binary encoding.
 - Updating/Deleting is easier for fixed-width records, as the offset can be calculated as `rowIndex * byteWidth`.
 
 ### 3.2 `StringPersister`
@@ -40,7 +40,7 @@ To handle different data types optimally, the system uses a hierarchy of Persist
 - **Read Algorithm**: Reads the dictionary into memory, then reads the array of short integers, translating them back to strings on-the-fly.
 
 ## Storage Flow Example (Appending a row)
-1. Query Engine calls `storageEngine.appendValue("Users", "Age", "25")`.
+1. Query Engine calls `storage engine.appendValue("Users", "Age", "25")`.
 2. Storage Engine looks up the column type (INT).
 3. It instantiates/retrieves a `NumericalPersister`.
 4. Persister parses `"25"` to `int 25`.

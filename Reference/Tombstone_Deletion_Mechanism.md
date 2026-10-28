@@ -4,13 +4,13 @@ This document explains how data is deleted in our database system. Unlike a text
 
 ## 1. The Deletion Problem
 
-In our column-store system, every column is saved as a solid `.bin` file on the hard drive. 
+In our column-store system, every column is saved as a solid `.bin` file on the hard drive.
 
 If we have 1,000,000 records and a user deletes record #5, physically removing those bytes from the middle of the file would require the computer to shift the remaining 999,995 records up by one position. This massive shifting operation is incredibly slow and would freeze the database for every single `DELETE` command.
 
 ## 2. The Tombstone Solution
 
-Instead of physically removing the data, we use a **Tombstone Flag**. 
+Instead of physically removing the data, we use a **Tombstone Flag**.
 
 In our binary format, every single piece of data written to a file is prefixed with a 1-byte status flag:
 - `0x00`: Means the row is **ALIVE**.
@@ -30,7 +30,7 @@ When a user runs a `DELETE FROM employees WHERE id = 5`, the engine simply navig
 [ALIVE (0x00)]   [Value: 99]
 ```
 
-When the `QueryEngine` reads the column files, it encounters the `0xFF` flag and completely skips the data, making it appear as though it was completely erased.
+When the `query engine` reads the column files, it encounters the `0xFF` flag and completely skips the data, making it appear as though it was completely erased.
 
 ## 3. Physical vs. Logical Indexes
 
@@ -40,7 +40,7 @@ Because deleted records still take up physical space, we have to distinguish bet
 
 Our `BasePersister` handles the mapping. When a user updates Logical Row `2`, the persister scans the file from the start, counting only ALIVE flags until it reaches the 2nd ALIVE record, ensuring that tombstones don't ruin the row ordering.
 
-To ensure safe deletion of multiple rows, our `QueryEngine` deletes rows from **bottom to top** (highest index to lowest). If we deleted from the top, all the logical indexes below would instantly shift, causing subsequent deletes in the same query to target the wrong rows.
+To ensure safe deletion of multiple rows, our `query engine` deletes rows from **bottom to top** (highest index to lowest). If we deleted from the top, all the logical indexes below would instantly shift, causing subsequent deletes in the same query to target the wrong rows.
 
 ---
 

@@ -1,8 +1,37 @@
 # 🎓 Column-Store Database — Complete Viva Preparation Guide
 
-> **Project**: Column-Store Data Storage System  
-> **Language**: Java (pure Java I/O — no external libraries)  
-> **Entry Point**: `cdb.client.CLIClient`
+> **Project**: Column-Store Data Storage System
+> **Language**: C++17 (standard library only)
+> **Entry Point**: `cdb_cpp/main.cpp` (`cdb_cli`)
+
+## C++ migration
+
+The database engine is implemented in C++17 under [`cdb_cpp/`](D:/CDB-C++/cdb_cpp).
+The implementation preserves the existing schema and column-file layout, including
+the big-endian binary headers, tombstone records, and categorical dictionaries, so
+the bundled [`databases/`](D:/CDB-C++/databases) directory can be opened by the C++
+engine.
+
+### Build and run
+
+Use CMake with a C++17-capable compiler:
+
+```powershell
+cmake -S cdb_cpp -B build
+cmake --build build --config Release
+.\build\Release\cdb_cli.exe databases
+```
+
+The optional command-line argument is the root directory containing database
+directories. When no argument is supplied, the executable searches both
+`databases/` and `../databases/`, so it works when launched from either the
+repository root or `cdb_cpp/`. The CLI accepts commands with or without a
+trailing semicolon and supports database selection, table inspection,
+bitmap-index inspection, and `CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, and
+`DELETE` SQL commands. Type `HELP` at the prompt for the available commands.
+
+The repository is C++-only. The runnable implementation is the C++ target in
+`cdb_cpp/`; no external language runtime or compiler is required at runtime.
 
 ---
 
@@ -77,26 +106,26 @@ flowchart TB
     classDef subgraphStyle fill:#ffffff,stroke:#aaaaaa,stroke-width:1px,stroke-dasharray: 5 5
 
     subgraph Client ["🖥️ 1. Client Layer"]
-        CLI("💻 CLIClient\n(REPL Interface)"):::clientLayer
+        CLI("💻 C++ CLI\n(REPL Interface)"):::clientLayer
     end
 
     subgraph API ["⚙️ 2. API Layer"]
-        DB_API("🔌 DatabaseAPI\n(Central Coordinator)"):::apiLayer
+        DB_API("🔌 C++ database API\n(Central Coordinator)"):::apiLayer
     end
 
     subgraph Execution ["🧠 3. Execution & Parsing Layer"]
-        Parser("🔍 QueryParser\n(SQL → Query Objects)"):::execLayer
-        Engine("⚡ QueryEngine\n(Execution Logic)"):::execLayer
+        Parser("🔍 Query parser\n(SQL → Query Objects)"):::execLayer
+        Engine("⚡ Query engine\n(Execution Logic)"):::execLayer
         Where("⚖️ WhereClause\n(AND/OR Logic Evaluator)"):::execLayer
     end
 
     subgraph CoreComponents ["🛠️ 4. Core Components Layer"]
-        SchemaMgr("📋 SchemaManager\n(Table/Column Metadata)"):::compLayer
-        IndexMgr("🎯 BitmapIndexManager\n(In-Memory BitSets)"):::compLayer
+        SchemaMgr("📋 Schema manager\n(Table/Column Metadata)"):::compLayer
+        IndexMgr("🎯 Bitmap index manager\n(In-Memory BitSets)"):::compLayer
     end
 
     subgraph Storage ["💾 5. Storage Layer (Strategy Pattern)"]
-        StorageEngine("📦 BinaryStorageEngine\n(StorageEngine Impl)"):::storeLayer
+        storage engine("📦 Binary storage engine\n(storage engine Impl)"):::storeLayer
         NumPersist("🔢 NumericalPersister\n(INT, DOUBLE, etc.)"):::storeLayer
         CatPersist("🔠 CategoricalPersister\n(STRING + Dictionary)"):::storeLayer
     end
@@ -112,14 +141,14 @@ flowchart TB
     DB_API ==>|Raw SQL| Parser
     Parser -.->|Parsed Query Object| DB_API
     DB_API ==>|Execute Query| Engine
-    
+
     Engine <==>|Parse/Eval Conditions| Where
     Engine <==>|Fetch/Validate Schemas| SchemaMgr
     Engine <==>|Fast Lookups & Updates| IndexMgr
-    Engine <==>|Read/Write/Delete| StorageEngine
+    Engine <==>|Read/Write/Delete| storage engine
 
-    StorageEngine -->|Numbers| NumPersist
-    StorageEngine -->|Strings| CatPersist
+    storage engine -->|Numbers| NumPersist
+    storage engine -->|Strings| CatPersist
 
     SchemaMgr -.->|Read/Write| MetaFiles
     NumPersist -.->|Read/Write Bytes| BinFiles
@@ -144,37 +173,33 @@ flowchart TD
     classDef success fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#000,rx:5,ry:5
     classDef slow fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#000,rx:5,ry:5
 
-    A("⌨️ User types query in CLI"):::input ==> B("💻 CLIClient"):::input
-    B ==> C("🔌 DatabaseAPI.execute()"):::core
-    C ==> D("🔍 QueryParser.parse()"):::core
+    A("⌨️ User types query in CLI"):::input ==> B("💻 C++ CLI"):::input
+    B ==> C("🔌 C++ database API.execute()"):::core
+    C ==> D("🔍 Query parser.parse()"):::core
     D -.-> E("📄 Query Object\n(SelectQuery, InsertQuery, etc.)"):::query
-    E ==> F("⚡ QueryEngine.execute()"):::core
-    
+    E ==> F("⚡ Query engine.execute()"):::core
+
     F ==> G{"🔀 Which query type?"}:::branch
-    
-    G ==>|CREATE| H("📋 SchemaManager.createTable()\n+ StorageEngine.createTable()"):::action
-    G ==>|INSERT| I("✅ Validate → 📦 StorageEngine.appendValue()\n→ 🎯 BitmapIndexManager.insertRow()"):::action
-    G ==>|SELECT| J("🔍 getFilteredRowIndexes()\n→ 📦 StorageEngine.readColumn()"):::action
-    G ==>|UPDATE| K("🔍 getFilteredRowIndexes()\n→ 📦 StorageEngine.updateValue()\n→ 🎯 BitmapIndexManager.updateValue()"):::action
-    G ==>|DELETE| L("🔍 getFilteredRowIndexes()\n→ 🗑️ StorageEngine.deleteRow()\n→ 🎯 BitmapIndexManager.buildIndex()"):::action
+
+    G ==>|CREATE| H("📋 Schema manager.createTable()\n+ storage engine.createTable()"):::action
+    G ==>|INSERT| I("✅ Validate → 📦 storage engine.appendValue()\n→ 🎯 Bitmap index manager.insertRow()"):::action
+    G ==>|SELECT| J("🔍 getFilteredRowIndexes()\n→ 📦 storage engine.readColumn()"):::action
+    G ==>|UPDATE| K("🔍 getFilteredRowIndexes()\n→ 📦 storage engine.updateValue()\n→ 🎯 Bitmap index manager.updateValue()"):::action
+    G ==>|DELETE| L("🔍 getFilteredRowIndexes()\n→ 🗑️ storage engine.deleteRow()\n→ 🎯 Bitmap index manager.buildIndex()"):::action
 
     J ==> M{"📊 Bitmap Index\navailable?"}:::branch
     M ==>|Yes| N("🚀 Fast BitSet Lookup"):::success
     M ==>|No| O("🐢 Sequential Scan\n(read column, check row-by-row)"):::slow
 ```
 
-### The 6 Packages
+### C++ implementation layers
 
 | Package | Responsibility |
 |---------|---------------|
-| `cdb.client` | CLI interface — reads user input, routes commands |
-| `cdb.api` | DatabaseAPI — central coordinator that wires everything together |
-| `cdb.ddl` | Schema definitions — `TableSchema`, `ColumnSchema`, `SchemaManager` |
-| `cdb.storage` | Binary storage engine — reading/writing `.bin` column files |
-| `cdb.storage.persistence` | Low-level binary I/O — Numerical and Categorical persisters |
-| `cdb.query` | Query parsing, execution engine, bitmap index manager |
-| `cdb.query.querytypes` | Data classes for each query type + WHERE clause |
-| `cdb.util` | File utilities, stress tester |
+| `cdb_cpp/main.cpp` | C++ command-line entry point |
+| `cdb_cpp/cdb.hpp` | Schema, storage, parser, executor, indexes, and shell |
+| `cdb_cpp/CMakeLists.txt` | C++17 build configuration |
+| `databases/` | Schema metadata, column files, and dictionaries |
 
 ---
 
@@ -182,41 +207,18 @@ flowchart TD
 
 ```
 Column-Store-Data-Storage-System/
-├── cdb/
-│   ├── api/
-│   │   └── DatabaseAPI.java          ← Central coordinator
-│   ├── client/
-│   │   └── CLIClient.java            ← Command-line interface
-│   ├── ddl/
-│   │   ├── ColumnSchema.java         ← One column's metadata (name, type, constraints)
-│   │   ├── TableSchema.java          ← Full table metadata (list of columns)
-│   │   └── SchemaManager.java        ← Reads/writes .schema files
-│   ├── query/
-│   │   ├── QueryParser.java          ← Converts SQL string → Query object
-│   │   ├── QueryEngine.java          ← Executes Query objects
-│   │   ├── BitmapIndexManager.java   ← Bitmap index creation & lookup
-│   │   └── querytypes/
-│   │       ├── Query.java            ← Marker interface
-│   │       ├── CreateTableQuery.java
-│   │       ├── InsertQuery.java
-│   │       ├── SelectQuery.java
-│   │       ├── UpdateQuery.java
-│   │       ├── DeleteQuery.java
-│   │       ├── ShowIndexQuery.java
-│   │       ├── WhereClause.java      ← Multi-condition WHERE logic
-│   │       └── WhereCondition.java   ← Single condition (col op val)
-│   ├── storage/
-│   │   ├── StorageEngine.java        ← Interface (contract)
-│   │   ├── BinaryStorageEngine.java  ← Implementation using binary files
-│   │   └── persistence/
-│   │       ├── ColumnPersister.java   ← Interface for column-level I/O
-│   │       ├── BasePersister.java     ← Shared logic (header, delete, find)
-│   │       ├── NumericalPersister.java← Handles INT, DOUBLE, FLOAT, etc.
-│   │       └── CategoricalPersister.java ← Handles STRING with dictionary encoding
-│   └── util/
-│       ├── FileUtils.java            ← Directory/file helpers
-│       ├── StressTester.java         ← Automated edge-case tests
-│       └── TestCategoricalData.java  ← Integration test for string columns
+├── cdb_cpp/
+│   ├── main.cpp                      ← C++ command-line interface
+│   ├── cdb.hpp                       ← Core database implementation
+│   ├── api/database_api.hpp          ← Database API layer
+│   ├── client/cli.hpp                ← CLI layer
+│   ├── ddl/schema.hpp                ← Schema layer
+│   ├── query/query.hpp               ← Query layer
+│   ├── storage/storage.hpp           ← Storage layer
+│   ├── util/filesystem.hpp           ← Utility layer
+│   └── CMakeLists.txt                ← C++17 build definition
+├── databases/                        ← Persistent database files
+└── Reference/                        ← Storage and query design notes
 └── databases/
     └── company_db/
         ├── metadata/
@@ -251,37 +253,24 @@ The schema layer is responsible for **defining the structure** of tables — wha
 
 ### Files Involved
 
-#### `ColumnSchema.java` — Represents ONE Column
+#### `Column schema implementation` — Represents ONE Column
 
-```java
-public class ColumnSchema {
-    private String name;              // e.g., "salary"
-    private String type;              // e.g., "DOUBLE"
-    private List<String> constraints; // e.g., ["PRIMARY_KEY", "NOT_NULL"]
-}
-```
 
 Think of it as a blueprint for a single column. It knows:
 - The column's **name** (e.g., `id`, `name`, `salary`)
 - The column's **data type** (e.g., `INT`, `STRING`, `DOUBLE`)
 - Any **constraints** (e.g., `PRIMARY_KEY`, `UNIQUE`, `NOT_NULL`)
 
-#### `TableSchema.java` — Represents ONE Table
+#### `C++ table schema` — Represents ONE Table
 
-```java
-public class TableSchema {
-    private String tableName;           // e.g., "employees"
-    private List<ColumnSchema> columns; // all columns in order
-}
-```
 
-A `TableSchema` is simply a list of `ColumnSchema` objects grouped under a table name.
+A `Table schema` is simply a list of `Column schema` objects grouped under a table name.
 
-#### `SchemaManager.java` — Manages All Schemas
+#### `Schema manager implementation` — Manages All Schemas
 
 This is the **controller** for all schema operations:
 
-1. **On startup** → Scans the `metadata/` folder for `.schema` files and loads them into a `HashMap<String, TableSchema>`
+1. **On startup** → Scans the `metadata/` folder for `.schema` files and loads them into a `HashMap<String, Table schema>`
 2. **On CREATE TABLE** → Serializes the schema into a `.schema` file and saves it to disk
 3. **On demand** → Provides `getTable(name)` to look up a table's structure
 
@@ -317,18 +306,8 @@ flowchart LR
 
 ### The Interface Pattern
 
-The project uses the **Strategy Pattern**: there is an interface `StorageEngine` and a concrete implementation `BinaryStorageEngine`.
+The project uses the **Strategy Pattern**: there is an interface `storage engine` and a concrete implementation `Binary storage engine`.
 
-```java
-public interface StorageEngine {
-    List<String> readColumn(String table, String column) throws IOException;
-    void appendValue(String table, String column, String value) throws IOException;
-    void updateValue(String table, String column, int rowIndex, String value) throws IOException;
-    void deleteRow(String table, int rowIndex) throws IOException;
-    void createTable(TableSchema schema) throws IOException;
-    void dropTable(String table) throws IOException;
-}
-```
 
 > [!NOTE]
 > This design means you could easily swap in a different storage implementation (e.g., text-based, compressed, etc.) without changing any other code. This is a key OOP design principle — **programming to an interface**.
@@ -357,7 +336,7 @@ Each column is stored as a **single `.bin` file**. The file format:
 
 ### The Type Tag System
 
-| Type Tag | SQL Type | Width (bytes) | Java Type |
+| Type Tag | SQL Type | Width (bytes) | C++ representation |
 |----------|----------|---------------|-----------|
 | 1 | BYTE | 1 | `byte` |
 | 2 | SHORT | 2 | `short` |
@@ -403,7 +382,7 @@ classDiagram
         +readAll() List~String~
         +update(int rowIndex, String value)
         -encode(int tag, String value) byte[]
-        -decode(int tag, DataInputStream) String
+        -decode(int tag, C++ input stream) String
     }
 
     class CategoricalPersister {
@@ -434,8 +413,8 @@ Bytes: [00 00 00 03] [00 00 00 03]  ← Header: tag=3 (INT), count=3
        [00] [00 00 00 07]           ← Record 2: ALIVE, value=7
 ```
 
-- **Encode**: Converts a `String` value like `"42"` → parses it to an `int` → writes 4 bytes using `DataOutputStream`
-- **Decode**: Reads 4 bytes using `DataInputStream.readInt()` → converts back to `String`
+- **Encode**: Converts a `String` value like `"42"` → parses it to an `int` → writes 4 bytes using `C++ output stream`
+- **Decode**: Reads 4 bytes using `C++ input stream.readInt()` → converts back to `String`
 
 ### CategoricalPersister — How Strings Are Stored (Dictionary Encoding)
 
@@ -495,11 +474,11 @@ Logical:      0       -        1        2       -        3
 
 ### What the Parser Does
 
-The `QueryParser` takes a raw SQL string and converts it into a structured **Query object** that the engine can execute.
+The `Query parser` takes a raw SQL string and converts it into a structured **Query object** that the engine can execute.
 
 ```
 "SELECT name, salary FROM employees WHERE dept = 'HR'"
-                        ↓ QueryParser.parse()
+                        ↓ Query parser.parse()
 SelectQuery {
     tableName: "employees",
     columns: ["name", "salary"],
@@ -566,26 +545,26 @@ This happens in two steps:
 
 ## 7. Query Engine — Execution
 
-The `QueryEngine` receives a parsed `Query` object and executes it. Here is the step-by-step flow for each query type:
+The `Query engine` receives a parsed `Query` object and executes it. Here is the step-by-step flow for each query type:
 
 ### CREATE TABLE Execution
 
 ```mermaid
 flowchart LR
-    A["CreateTableQuery"] --> B["SchemaManager.createTable()"]
+    A["CreateTableQuery"] --> B["Schema manager.createTable()"]
     B --> C["Write .schema file to metadata/"]
-    A --> D["StorageEngine.createTable()"]
+    A --> D["storage engine.createTable()"]
     D --> E["Create table directory\nCreate empty .bin file per column"]
 ```
 
-1. `SchemaManager.createTable()` → serializes `TableSchema` to a `.schema` file in `metadata/`
-2. `BinaryStorageEngine.createTable()` → creates a directory for the table under `tables/`, and for each column, creates an empty `.bin` file with just the 8-byte header (type tag + count=0)
+1. `Schema manager.createTable()` → serializes `Table schema` to a `.schema` file in `metadata/`
+2. `Binary storage engine.createTable()` → creates a directory for the table under `tables/`, and for each column, creates an empty `.bin` file with just the 8-byte header (type tag + count=0)
 
 ### INSERT Execution
 
 ```mermaid
 flowchart TD
-    A["InsertQuery"] --> B["Get TableSchema"]
+    A["InsertQuery"] --> B["Get Table schema"]
     B --> C["Validate: column count match?"]
     C --> D["For each column:"]
     D --> E["Check NOT_NULL constraint"]
@@ -593,8 +572,8 @@ flowchart TD
     D --> G["Check PRIMARY_KEY / UNIQUE"]
     G --> H["Read existing column values\nCheck for duplicate"]
     H --> I["All validations passed?"]
-    I -->|Yes| J["For each column:\nStorageEngine.appendValue()"]
-    J --> K["BitmapIndexManager.insertRow()"]
+    I -->|Yes| J["For each column:\nstorage engine.appendValue()"]
+    J --> K["Bitmap index manager.insertRow()"]
     I -->|No| L["Throw Error"]
 ```
 
@@ -622,14 +601,14 @@ flowchart TD
 
 1. Find matching rows using `getFilteredRowIndexes()` (same WHERE logic as SELECT)
 2. For each matching row:
-   - Call `storageEngine.updateValue()` → overwrites the bytes at that row position
+   - Call `storage engine.updateValue()` → overwrites the bytes at that row position
    - Call `indexManager.updateValue()` → updates the bitmap index (unset old bit, set new bit)
 
 ### DELETE Execution
 
 1. Find matching rows using `getFilteredRowIndexes()`
 2. Delete rows **from bottom to top** (to preserve row indexes during deletion)
-3. For each row: Call `storageEngine.deleteRow()` → sets the tombstone flag (0xFF) across all column files
+3. For each row: Call `storage engine.deleteRow()` → sets the tombstone flag (0xFF) across all column files
 4. After all deletions: Call `indexManager.buildIndex()` → completely rebuilds the bitmap index (because row positions have shifted)
 
 > [!IMPORTANT]
@@ -654,21 +633,11 @@ WhereClause: Represents the FULL WHERE clause
 
 ### How Conditions Are Evaluated
 
-The `evaluateCondition()` method in `QueryEngine`:
+The `evaluateCondition()` method in `Query engine`:
 
 1. **Try numeric comparison first**: Parse both values as `double`, then use `==`, `!=`, `>`, `<`, `>=`, `<=`
 2. **Fall back to string comparison**: If parsing fails (not a number), use `equalsIgnoreCase()` for `=` and `!=`
 
-```java
-// Simplified logic:
-try {
-    double num1 = Double.parseDouble(val1);
-    double num2 = Double.parseDouble(val2);
-    // numeric comparison: num1 op num2
-} catch (NumberFormatException) {
-    // string comparison: val1.equalsIgnoreCase(val2)
-}
-```
 
 ### AND Logic (Step by Step)
 
@@ -716,14 +685,6 @@ Value "Finance"     → BitSet: 0 0 0 1 0
 
 ### In-Memory Structure
 
-```java
-// Table → Column → Value → BitSet
-Map<String, Map<String, Map<String, BitSet>>> indexes;
-
-// Example access:
-indexes.get("employees").get("dept").get("HR")  →  BitSet{1, 4}
-//  means rows 1 and 4 have dept = "HR"
-```
 
 ### How a Bitmap Index is Built (`buildIndex()`)
 
@@ -821,22 +782,22 @@ or
 
 ## 10. CLI Client
 
-The `CLIClient` is the user-facing component. It provides a REPL (Read-Eval-Print-Loop):
+The `C++ CLI` is the user-facing component. It provides a REPL (Read-Eval-Print-Loop):
 
-### Commands Handled Directly by CLIClient
+### Commands Handled Directly by C++ CLI
 
 | Command | Description |
 |---------|-------------|
 | `SHOW DATABASES` | Lists all folders in the `databases/` directory |
 | `CREATE DATABASE <name>` | Creates a new folder in `databases/` |
-| `USE DATABASE <name>` | Switches to a database (creates a `DatabaseAPI` instance) |
+| `USE DATABASE <name>` | Switches to a database (creates a `C++ database API` instance) |
 | `SHOW TABLES` | Lists all table directories in the current database |
 | `SHOW BITMAP INDEX <table>` | Dumps the bitmap index visualization |
 | `EXIT` / `QUIT` | Exits the program |
 
-### Commands Forwarded to DatabaseAPI
+### Commands Forwarded to C++ database API
 
-Any SQL command (`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`) is forwarded to `DatabaseAPI.execute()`.
+Any SQL command (`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`) is forwarded to `C++ database API.execute()`.
 
 ### Example Session
 
@@ -864,14 +825,14 @@ id    name    dept           salary
 
 ## 11. Utility & Testing
 
-### FileUtils.java
+### C++ filesystem helpers
 
 Simple helper methods:
 - `ensureDirectory(path)` → Creates directories if they don't exist
 - `ensureFile(path)` → Creates a file (and parent dirs) if it doesn't exist
 - `deleteDirectory(dir)` → Recursively deletes a directory
 
-### StressTester.java
+### C++ stress tests
 
 An automated test suite that validates:
 
@@ -886,7 +847,7 @@ An automated test suite that validates:
 | Empty Values | Handling empty strings and zero values |
 | Bulk Operations | Insert 100 rows, verify count, delete them, verify again |
 
-### TestCategoricalData.java
+### C++ categorical-data tests
 
 An integration test that exercises the full lifecycle with string data:
 - Creates a `users` table with STRING columns
@@ -907,8 +868,8 @@ CREATE TABLE students (id INT PRIMARY_KEY, name STRING NOT_NULL, grade INT, city
 
 **What happens internally**:
 1. A folder `databases/school/` is created
-2. `SchemaManager` writes `databases/school/metadata/students.schema`
-3. `BinaryStorageEngine` creates:
+2. `Schema manager` writes `databases/school/metadata/students.schema`
+3. `Binary storage engine` creates:
    - `databases/school/tables/students/id.bin` (header: tag=3, count=0)
    - `databases/school/tables/students/name.bin` (header: tag=9, count=0) + `name.dict`
    - `databases/school/tables/students/grade.bin` (header: tag=3, count=0)
@@ -1017,7 +978,7 @@ UPDATE students SET grade = 95 WHERE name = 'Rahul'
 **Execution trace**:
 1. Find rows where `name = 'Rahul'` → Bitmap lookup finds row 2
 2. Read current value of `grade` at row 2 → `78`
-3. `storageEngine.updateValue("students", "grade", 2, "95")`:
+3. `storage engine.updateValue("students", "grade", 2, "95")`:
    - Find physical index of logical row 2
    - Seek to that position in `grade.bin`
    - Overwrite the 4-byte INT value from `78` to `95`
@@ -1132,7 +1093,7 @@ Sneha
 **A**: In a row-store, all columns of one row are stored together. In a column-store, each column is stored in a separate file. Column-stores are better for analytical queries (aggregations, reading specific columns) because they only read the columns needed, reducing I/O.
 
 ### Q2: Why did you use binary storage instead of text files?
-**A**: Binary storage is more space-efficient (an INT takes exactly 4 bytes vs. variable-length text), faster to read (no parsing overhead), supports direct random access (fixed-width records), and maps cleanly to Java's DataInputStream/DataOutputStream.
+**A**: Binary storage is more space-efficient (an INT takes exactly 4 bytes vs. variable-length text), faster to read (no parsing overhead), supports direct random access (fixed-width records), and maps cleanly to the C++ binary stream implementation.
 
 ### Q3: What is dictionary encoding and why do you use it?
 **A**: Dictionary encoding maps each unique string value to an integer ID and stores the mapping in a separate `.dict` file. The column file then stores only the IDs (4 bytes each). This saves space when strings repeat frequently (e.g., department names) and makes string columns fixed-width.
@@ -1148,7 +1109,7 @@ Sneha
 
 ### Q7: What design patterns did you use?
 **A**:
-- **Strategy Pattern**: `StorageEngine` interface with `BinaryStorageEngine` implementation — allows swapping storage backends
+- **Strategy Pattern**: `storage engine` interface with `Binary storage engine` implementation — allows swapping storage backends
 - **Template Method Pattern**: `BasePersister` defines the structure (header, record layout, delete), while `NumericalPersister` and `CategoricalPersister` implement type-specific encoding/decoding
 - **Command Pattern**: Each query type (`SelectQuery`, `InsertQuery`, etc.) encapsulates the query data as an object, which is then dispatched to the engine
 
@@ -1163,10 +1124,10 @@ Sneha
 
 ### Q11: Explain the flow of `SELECT * FROM emp WHERE dept='HR' AND salary > 50000`.
 **A**:
-1. `CLIClient` reads the query and calls `DatabaseAPI.execute()`
-2. `QueryParser.parse()` identifies it as a SELECT, splits the WHERE clause, and creates a `SelectQuery` with a `WhereClause` containing two `WhereCondition` objects joined by AND
-3. `QueryEngine.executeSelect()` validates columns, then calls `getFilteredRowIndexes()`
-4. `BitmapIndexManager` evaluates each condition using its BitSet, ANDs the results, and returns matching row indices
+1. `C++ CLI` reads the query and calls `C++ database API.execute()`
+2. `Query parser.parse()` identifies it as a SELECT, splits the WHERE clause, and creates a `SelectQuery` with a `WhereClause` containing two `WhereCondition` objects joined by AND
+3. `Query engine.executeSelect()` validates columns, then calls `getFilteredRowIndexes()`
+4. `Bitmap index manager` evaluates each condition using its BitSet, ANDs the results, and returns matching row indices
 5. Only the matched rows are extracted from the column data and formatted as a table
 
 ### Q12: What constraints does your system support?
@@ -1175,17 +1136,17 @@ Sneha
 ### Q13: Why do you delete rows from bottom to top?
 **A**: Because deleting a row shifts the logical indexes of all rows below it. If we deleted row 1 first, what was row 4 would become row 3, and our reference to "row 4" would be wrong. By going bottom to top, we ensure that earlier indexes remain valid.
 
-### Q14: What is the `BinaryStorageEngine.typeTag()` method for?
+### Q14: What is the `Binary storage engine.typeTag()` method for?
 **A**: It maps SQL type names (like `"INT"`, `"STRING"`) to integer type tags (like `3`, `9`) that are stored in the binary file header. This allows the system to know what type of data is in a column file without needing the schema.
 
-### Q15: How does the `DatabaseAPI` coordinate all components?
-**A**: `DatabaseAPI` is the **central coordinator**. On initialization, it creates: `SchemaManager` (loads schemas), `BinaryStorageEngine` (sets up storage), `BitmapIndexManager` (builds indexes using both storage and schema), and `QueryEngine` (receives all three). When a query comes in: `DatabaseAPI.execute()` calls `QueryParser.parse()` then `QueryEngine.execute()` — a clean two-step process.
+### Q15: How does the `C++ database API` coordinate all components?
+**A**: `C++ database API` is the **central coordinator**. On initialization, it creates: `Schema manager` (loads schemas), `Binary storage engine` (sets up storage), `Bitmap index manager` (builds indexes using both storage and schema), and `Query engine` (receives all three). When a query comes in: `C++ database API.execute()` calls `Query parser.parse()` then `Query engine.execute()` — a clean two-step process.
 
 ---
 
 > [!IMPORTANT]
 > ## Final Tips for Your Viva
-> 1. **Know the flow**: User → CLI → DatabaseAPI → Parser → Engine → Storage/Index. Every query follows this flow.
+> 1. **Know the flow**: User → CLI → C++ database API → Parser → Engine → Storage/Index. Every query follows this flow.
 > 2. **Know the file system layout**: `databases/<db>/metadata/*.schema` for blueprints, `databases/<db>/tables/<table>/*.bin` for data.
 > 3. **Be ready to trace a query**: Pick any query and walk through it step by step from parsing to result.
 > 4. **Understand the trade-offs**: Column-store vs row-store, bitmap index vs sequential scan, tombstone delete vs physical delete, dictionary encoding vs raw strings.
