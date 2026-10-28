@@ -125,7 +125,7 @@ flowchart TB
     end
 
     subgraph Storage ["💾 5. Storage Layer (Strategy Pattern)"]
-        storage engine("📦 Binary storage engine\n(storage engine Impl)"):::storeLayer
+        StorageEngine("📦 Binary storage engine\n(Storage Engine Impl)"):::storeLayer
         NumPersist("🔢 NumericalPersister\n(INT, DOUBLE, etc.)"):::storeLayer
         CatPersist("🔠 CategoricalPersister\n(STRING + Dictionary)"):::storeLayer
     end
@@ -145,10 +145,10 @@ flowchart TB
     Engine <==>|Parse/Eval Conditions| Where
     Engine <==>|Fetch/Validate Schemas| SchemaMgr
     Engine <==>|Fast Lookups & Updates| IndexMgr
-    Engine <==>|Read/Write/Delete| storage engine
+    Engine <==>|Read/Write/Delete| StorageEngine
 
-    storage engine -->|Numbers| NumPersist
-    storage engine -->|Strings| CatPersist
+    StorageEngine -->|Numbers| NumPersist
+    StorageEngine -->|Strings| CatPersist
 
     SchemaMgr -.->|Read/Write| MetaFiles
     NumPersist -.->|Read/Write Bytes| BinFiles
