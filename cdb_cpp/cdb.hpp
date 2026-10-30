@@ -170,6 +170,45 @@ struct Column {
     return false;
   }
 };
+inline bool isNullValue(const std::string &value) {
+  const auto v = upper(unquote(value));
+  return v.empty() || v == "NULL";
+}
+inline void validateValue(const std::string &value, const std::string &type) {
+  const auto v = unquote(value);
+  if (isNullValue(v))
+    return;
+  const auto t = upper(type);
+  try {
+    size_t used = 0;
+    if (t == "BYTE") {
+      const auto n = std::stoll(v, &used);
+      if (n < -128 || n > 127) throw std::runtime_error("BYTE out of range");
+    } else if (t == "SHORT") {
+      const auto n = std::stoll(v, &used);
+      if (n < -32768 || n > 32767) throw std::runtime_error("SHORT out of range");
+    } else if (t == "INT" || t == "INTEGER")
+      (void)std::stoll(v, &used);
+    else if (t == "LONG" || t == "BIGINT")
+      (void)std::stoll(v, &used);
+    else if (t == "FLOAT" || t == "REAL" || t == "DOUBLE" ||
+             t == "DECIMAL" || t == "BIGDECIMAL" || t == "NUMERIC")
+      (void)std::stod(v, &used);
+    else if (t == "BOOLEAN" || t == "BOOL") {
+      if (upper(v) != "TRUE" && upper(v) != "FALSE" && v != "0" && v != "1")
+        throw std::runtime_error("Invalid BOOLEAN value");
+      return;
+    } else {
+      return;
+    }
+    if (used != v.size())
+      throw std::runtime_error("Invalid " + type + " value");
+  } catch (const std::invalid_argument &) {
+    throw std::runtime_error("Invalid " + type + " value");
+  } catch (const std::out_of_range &) {
+    throw std::runtime_error(type + " value out of range");
+  }
+}
 struct Schema {
   std::string name;
   std::vector<Column> columns;
@@ -655,6 +694,62 @@ class Database {
   std::map<std::string,
            std::map<std::string, std::map<std::string, std::set<int>>>>
       idx;
+  std::set<int> allRows(int count) const {
+    std::set<int> result;
+    for (int i = 0; i < count; ++i) result.insert(i);
+    return result;
+  }
+  std::set<int> indexedRows(const std::string &table, const std::string &expression,
+                            int rowCount, bool &used) const {
+    const auto text = stripOuterParentheses(expression);
+    const auto ors = splitLogical(text, "OR");
+    if (ors.size() > 1) {
+      std::set<int> result;
+      for (const auto &part : ors) {
+        bool childUsed = false;
+        const auto child = indexedRows(table, part, rowCount, childUsed);
+        if (!childUsed) return allRows(rowCount);
+        result.insert(child.begin(), child.end());
+      }
+      used = true;
+      return result;
+    }
+    const auto ands = splitLogical(text, "AND");
+    if (ands.size() > 1) {
+      std::set<int> result;
+      bool initialized = false;
+      for (const auto &part : ands) {
+        bool childUsed = false;
+        const auto child = indexedRows(table, part, rowCount, childUsed);
+        if (!childUsed) continue;
+        if (!initialized) {
+          result = child;
+          initialized = true;
+        } else {
+          std::set<int> intersection;
+          std::set_intersection(result.begin(), result.end(), child.begin(),
+                                child.end(), std::inserter(intersection, intersection.begin()));
+          result.swap(intersection);
+        }
+      }
+      if (initialized) {
+        used = true;
+        return result;
+      }
+      return allRows(rowCount);
+    }
+    std::smatch match;
+    if (!std::regex_match(text, match,
+                          std::regex("\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.*?)\\s*")))
+      return allRows(rowCount);
+    const auto tableIt = idx.find(table);
+    if (tableIt == idx.end()) return allRows(rowCount);
+    const auto columnIt = tableIt->second.find(match[1].str());
+    if (columnIt == tableIt->second.end()) return allRows(rowCount);
+    const auto valueIt = columnIt->second.find(unquote(match[2].str()));
+    used = true;
+    return valueIt == columnIt->second.end() ? std::set<int>() : valueIt->second;
+  }
   void rebuild(const std::string &t) {
     idx[t].clear();
     auto *s = sm.get(t);
@@ -679,7 +774,12 @@ class Database {
     std::map<std::string, std::vector<std::string>> data;
     for (auto &c : s.columns)
       data[c.name] = st.read(t, c.name);
-    for (int i = 0; i < n; ++i) {
+    std::set<int> candidates = allRows(n);
+    bool usedIndex = false;
+    if (w && !w->expression.empty())
+      candidates = indexedRows(t, w->expression, n, usedIndex);
+    (void)usedIndex;
+    for (int i : candidates) {
       bool ok = !w;
       if (w && !w->expression.empty()) {
         ok = evaluateWhere(w->expression, [&](const std::string &column) {
@@ -724,6 +824,8 @@ public:
                            rx("CREATE\\s+TABLE\\s+(\\w+)\\s*\\((.*)\\)"))) {
         Schema s;
         s.name = m[1];
+        if (sm.get(s.name))
+          throw std::runtime_error("Table already exists: " + s.name);
         for (auto &d : split_csv(m[2])) {
           std::istringstream z(d);
           Column c;
@@ -731,6 +833,8 @@ public:
           std::string x;
           while (z >> x)
             c.constraints.push_back(x);
+          if (c.name.empty() || c.type.empty())
+            throw std::runtime_error("Invalid column definition");
           s.columns.push_back(c);
         }
         sm.create(s);
@@ -753,8 +857,14 @@ public:
         if (v.size() != s->columns.size())
           throw std::runtime_error("Column count doesn't match");
         for (size_t i = 0; i < v.size(); ++i) {
-          if (s->columns[i].has("NOT_NULL") && upper(unquote(v[i])) == "NULL")
+          if (s->columns[i].has("NOT_NULL") && isNullValue(v[i]))
             throw std::runtime_error("NOT_NULL violation");
+          validateValue(v[i], s->columns[i].type);
+          if (s->columns[i].has("PRIMARY_KEY") || s->columns[i].has("UNIQUE")) {
+            const auto existing = st.read(s->name, s->columns[i].name);
+            if (std::find(existing.begin(), existing.end(), unquote(v[i])) != existing.end())
+              throw std::runtime_error("Constraint violation on " + s->columns[i].name);
+          }
           st.append(s->name, s->columns[i], v[i]);
         }
         rebuild(s->name);
@@ -797,12 +907,23 @@ public:
         auto *s = sm.get(m[1]);
         if (!s || !s->column(m[2]))
           throw std::runtime_error("Table/column not found");
+        auto *setColumn = s->column(m[2]);
+        if (setColumn->has("NOT_NULL") && isNullValue(m[3].str()))
+          throw std::runtime_error("NOT_NULL violation");
+        validateValue(m[3].str(), setColumn->type);
         Where w;
         if (m[4].matched)
           w = parseWhere(m[4]);
         auto rr = rows(s->name, *s, m[4].matched ? &w : nullptr);
+        if (setColumn->has("PRIMARY_KEY") || setColumn->has("UNIQUE")) {
+          const auto existing = st.read(s->name, setColumn->name);
+          for (size_t i = 0; i < existing.size(); ++i)
+            if (std::find(rr.begin(), rr.end(), (int)i) == rr.end() &&
+                existing[i] == unquote(m[3].str()))
+              throw std::runtime_error("Constraint violation on " + setColumn->name);
+        }
         for (int i : rr)
-          st.update(s->name, *s->column(m[2]), i, m[3]);
+          st.update(s->name, *setColumn, i, m[3]);
         rebuild(s->name);
         return std::to_string(rr.size()) + " rows updated.";
       }
@@ -847,6 +968,7 @@ class Shell {
   fs::path root;
   std::unique_ptr<Database> db;
   std::string name;
+  std::vector<std::string> history;
 
 public:
   explicit Shell(fs::path r) : root(std::move(r)) {}
@@ -863,9 +985,32 @@ public:
       auto u = upper(q);
       if (u == "EXIT" || u == "QUIT")
         break;
+      if (u == "HISTORY") {
+        for (size_t i = 0; i < history.size(); ++i)
+          out << (i + 1) << " " << history[i] << "\n";
+        continue;
+      }
+      if (q.size() > 1 && q.front() == '!' &&
+          std::all_of(q.begin() + 1, q.end(), [](char c) { return std::isdigit((unsigned char)c); })) {
+        const auto number = std::stoul(q.substr(1));
+        if (number == 0 || number > history.size()) {
+          out << "Error: history entry not found.\n";
+          continue;
+        }
+        q = history[number - 1];
+        u = upper(q);
+        out << q << "\n";
+      } else {
+        history.push_back(q);
+      }
       if (u == "HELP") {
-        out << "CREATE DATABASE n | USE DATABASE n | SHOW DATABASES | SHOW "
-               "TABLES | SHOW BITMAP INDEX t | SQL CRUD | EXIT\n";
+        out << "CREATE DATABASE n | USE DATABASE n | DROP DATABASE n | SHOW "
+               "DATABASES | SHOW TABLES | SHOW BITMAP INDEX t | HISTORY | !n | "
+               "CLEAR | SQL CRUD | EXIT\n";
+        continue;
+      }
+      if (u == "CLEAR") {
+        for (int i = 0; i < 40; ++i) out << "\n";
         continue;
       }
       if (u == "SHOW DATABASES") {
@@ -877,6 +1022,21 @@ public:
       if (u.rfind("CREATE DATABASE ", 0) == 0) {
         fs::create_directories(root / trim(q.substr(16)));
         out << "Database created.\n";
+        continue;
+      }
+      if (u.rfind("DROP DATABASE ", 0) == 0) {
+        const auto database = trim(q.substr(14));
+        if (database.empty()) {
+          out << "Error: database name is required.\n";
+          continue;
+        }
+        std::error_code ec;
+        if (database == name) {
+          db.reset();
+          name.clear();
+        }
+        fs::remove_all(root / database, ec);
+        out << (ec ? "Error: database not found.\n" : "Database dropped.\n");
         continue;
       }
       if (u.rfind("USE DATABASE ", 0) == 0) {

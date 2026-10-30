@@ -13,6 +13,6 @@ int main(int argc, char** argv) {
         root = "databases";
     }
     cdb::fs::create_directories(root);
-    cdb::Shell shell(root);
+    cdb::client::CLIClient shell(root);
     shell.run(std::cin, std::cout);
 }

@@ -33,6 +33,19 @@ bitmap-index inspection, and `CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, and
 The repository is C++-only. The runnable implementation is the C++ target in
 `cdb_cpp/`; no external language runtime or compiler is required at runtime.
 
+### Java feature parity
+
+The C++ edition supports the core behavior of the former implementation:
+
+| Area | C++ behavior |
+|---|---|
+| SQL | `CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, and `DROP TABLE` |
+| Filtering | Comparisons, nested parentheses, `AND`/`OR`, and precedence-aware evaluation |
+| Storage | Typed fixed-width binary columns, dictionaries, and tombstone deletion |
+| Constraints | `NOT_NULL`, `PRIMARY_KEY`, and `UNIQUE` validation before writes |
+| Indexing | Low-cardinality categorical indexes used to narrow equality filters |
+| CLI | `HISTORY`, `!n` command recall, `CLEAR`, `SHOW` commands, and `DROP DATABASE` |
+
 ---
 
 ## Table of Contents
@@ -198,6 +211,14 @@ flowchart TD
 |---------|---------------|
 | `cdb_cpp/main.cpp` | C++ command-line entry point |
 | `cdb_cpp/cdb.hpp` | Schema, storage, parser, executor, indexes, and shell |
+| `cdb_cpp/api/database_api.hpp` | Database API facade |
+| `cdb_cpp/client/cli.hpp` | Interactive CLI and command routing |
+| `cdb_cpp/ddl/schema.hpp` | Column, table, and schema manager interfaces |
+| `cdb_cpp/query/query.hpp` | Query engine and WHERE abstractions |
+| `cdb_cpp/query/querytypes/` | Select, insert, update, and delete query models |
+| `cdb_cpp/storage/storage.hpp` | Storage engine interfaces |
+| `cdb_cpp/storage/persistence/` | Column persistence contracts |
+| `cdb_cpp/util/filesystem.hpp` | Filesystem utility interface |
 | `cdb_cpp/CMakeLists.txt` | C++17 build configuration |
 | `databases/` | Schema metadata, column files, and dictionaries |
 
@@ -209,12 +230,16 @@ flowchart TD
 Column-Store-Data-Storage-System/
 ├── cdb_cpp/
 │   ├── main.cpp                      ← C++ command-line interface
-│   ├── cdb.hpp                       ← Core database implementation
+│   ├── cdb.hpp                       ← Shared storage/query implementation
 │   ├── api/database_api.hpp          ← Database API layer
 │   ├── client/cli.hpp                ← CLI layer
 │   ├── ddl/schema.hpp                ← Schema layer
-│   ├── query/query.hpp               ← Query layer
-│   ├── storage/storage.hpp           ← Storage layer
+│   ├── query/
+│   │   ├── query.hpp                 ← Query layer
+│   │   └── querytypes/               ← Query model types
+│   ├── storage/
+│   │   ├── storage.hpp               ← Storage layer
+│   │   └── persistence/              ← Column persistence contracts
 │   ├── util/filesystem.hpp           ← Utility layer
 │   └── CMakeLists.txt                ← C++17 build definition
 ├── databases/                        ← Persistent database files

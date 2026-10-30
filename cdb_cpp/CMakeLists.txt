@@ -9,7 +9,9 @@ target_sources(cdb_cli PRIVATE
   client/cli.hpp
   ddl/schema.hpp
   query/query.hpp
+  query/querytypes/query_types.hpp
   storage/storage.hpp
+  storage/persistence/column_persister.hpp
   util/filesystem.hpp
 )
 if(MSVC)
