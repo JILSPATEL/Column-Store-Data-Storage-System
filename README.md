@@ -91,10 +91,10 @@ salary.bin:  [80000, 50000, 90000]
 
 | Advantage | Explanation |
 |-----------|-------------|
-| **Fast analytical queries** | If you run `SELECT salary FROM employees`, only the `salary.bin` file is read — the other columns are never touched |
+| **Fast analytical queries** | The column-oriented layout keeps each column in its own file and provides a clear path for projection pushdown; the current executor loads table columns for row evaluation |
 | **Better compression** | Same data type in a file compresses much better (e.g., a column of integers) |
 | **Bitmap indexing fits naturally** | Since each column is separate, creating per-column indexes is straightforward |
-| **Reduced I/O** | You only read the columns you need, saving disk and memory |
+| **Reduced I/O potential** | Separate column files allow storage and query optimizations; the current row evaluator may load additional columns needed by predicates |
 
 > [!IMPORTANT]
 > **Key takeaway for viva**: Column-stores are optimized for *reading specific columns* across many rows (analytical workloads), while row-stores are optimized for *reading/writing entire rows* (transactional workloads).
@@ -103,7 +103,198 @@ salary.bin:  [80000, 50000, 90000]
 
 ## 2. Project Architecture — The Big Picture
 
-### 2.1 Whole Project Architecture Pipeline
+### 2.1 Actual request-to-filesystem flow
+
+The following diagram describes the current C++ implementation. The CLI
+handles session commands such as `USE DATABASE`, while SQL statements are
+delegated through the API to `Database`, which coordinates schemas, indexes,
+storage, and the filesystem.
+
+```mermaid
+flowchart TD
+    U["User types command"] --> M["main.cpp"]
+    M --> C["CLIClient::run()"]
+    C --> D{"Command category"}
+    D -->|"HELP / HISTORY / CLEAR"| R["CLI handles command"]
+    D -->|"CREATE / DROP / SHOW DATABASES"| F["Filesystem helpers"]
+    D -->|"USE DATABASE name"| S["Create DatabaseAPI\nfor databases/name"]
+    D -->|"SQL CRUD"| A["DatabaseAPI::execute(query)"]
+    A --> E["Database::execute()"]
+    E --> P["Trim input and match SQL regex"]
+    P --> Q{"Statement type"}
+
+    Q -->|"CREATE TABLE"| CT["Build Schema\nvalidate columns"]
+    CT --> SM["SchemaManager::create()"]
+    CT --> SC["StorageEngine::create()"]
+    SM --> META["metadata/table.schema"]
+    SC --> TABLE["tables/table/column.bin"]
+
+    Q -->|"INSERT"| I["Find schema\nvalidate types and constraints"]
+    I --> IA["StorageEngine::append()"]
+    IA --> COL["Append one record per column"]
+    COL --> DICT["Update column.dict for strings"]
+    I --> IR["rebuild(table)"]
+
+    Q -->|"SELECT / UPDATE / DELETE"| ROWS["Load columns and find matching rows"]
+    ROWS --> IDX{"Eligible equality index?"}
+    IDX -->|"Yes"| CAND["Use indexed candidate row IDs"]
+    IDX -->|"No"| SCAN["Scan all logical rows"]
+    CAND --> WHERE["Evaluate complete WHERE expression"]
+    SCAN --> WHERE
+    WHERE --> RESULT["Return result or matching row IDs"]
+    RESULT --> OUT["CLI prints returned text"]
+
+    RESULT -->|"UPDATE"| UW["StorageEngine::update()"]
+    RESULT -->|"DELETE"| DW["StorageEngine::erase()"]
+    UW --> REWRITE["Rewrite fixed-width value"]
+    DW --> TOMB["Write 0xFF tombstone flag"]
+    UW --> IR
+    DW --> IR
+```
+
+### 2.2 Step-by-step execution
+
+#### Step 1: Process startup
+
+1. [`main.cpp`](D:/CDB-C++/cdb_cpp/main.cpp) chooses the database root from
+   the command-line argument, `databases/`, or `../databases/`.
+2. It creates [`CLIClient`](D:/CDB-C++/cdb_cpp/client/cli.hpp), then starts
+   the interactive read-evaluate-print loop.
+3. The CLI handles non-SQL commands itself. For example, `CREATE DATABASE`
+   creates a directory and `USE DATABASE company_db` selects a database path.
+
+#### Step 2: Database selection
+
+When `USE DATABASE company_db` is entered, the CLI constructs
+[`DatabaseAPI`](D:/CDB-C++/cdb_cpp/api/database_api.hpp) with
+`databases/company_db`. The API constructs `Database`, which:
+
+1. Loads schema metadata through `SchemaManager`.
+2. Selects `PersistentStorage` as the default `StorageEngine`.
+3. Creates the `tables/` directory if necessary.
+4. Rebuilds eligible in-memory equality indexes for existing tables.
+
+Indexes are not persisted as separate files. They are rebuilt when the
+database object starts and after table modifications.
+
+#### Step 3: SQL parsing and dispatch
+
+For SQL input, `CLIClient` calls `DatabaseAPI::execute(query)`. The request
+then follows this path:
+
+```text
+CLIClient
+  -> DatabaseAPI::execute()
+    -> Database::execute()
+      -> trim input and remove optional semicolon
+      -> match CREATE, INSERT, SELECT, UPDATE, DELETE, or DROP regex
+      -> validate and execute the selected operation
+      -> return a text result or "Error: ..."
+```
+
+The parser is currently implemented inside `Database::execute()` using
+regular expressions and helper functions such as `split_csv()`,
+`parseWhere()`, and `evaluateWhere()`. It does not create separate parser
+objects for each statement.
+
+#### Step 4: CREATE TABLE
+
+For:
+
+```sql
+CREATE TABLE employees (id INT, name TEXT, salary DOUBLE);
+```
+
+the engine:
+
+1. Extracts the table name and column definitions.
+2. Builds a `Schema` containing `Column` objects and constraints.
+3. Rejects duplicate or invalid table definitions.
+4. Writes the schema to `metadata/employees.schema`.
+5. Calls `StorageEngine::create()` to create one `.bin` file per column.
+6. Creates an empty `.dict` file for string-like columns.
+
+#### Step 5: INSERT
+
+For:
+
+```sql
+INSERT INTO employees VALUES (1, 'Alice', 75000);
+```
+
+the engine:
+
+1. Finds the table schema.
+2. Checks that the value count matches the column count.
+3. Enforces `NOT_NULL`, `PRIMARY_KEY`, and `UNIQUE`.
+4. Validates each value against its declared type.
+5. Calls `StorageEngine::append()` once for each column.
+6. Updates the dictionary when a string value is new.
+7. Rebuilds the table's in-memory equality indexes.
+
+#### Step 6: SELECT and WHERE evaluation
+
+For:
+
+```sql
+SELECT name, salary FROM employees WHERE department = 'Engineering';
+```
+
+the engine:
+
+1. Loads the schema and reads the table's column vectors for row evaluation.
+2. Determines the logical row count from those loaded columns.
+3. Uses an eligible equality index to produce candidate row IDs when
+   possible.
+4. Falls back to all rows when no index applies.
+5. Evaluates the complete `WHERE` expression, including comparisons,
+   parentheses, `AND`, and `OR`.
+6. Formats only the requested columns as tab-separated output. The current
+   row evaluator may load additional table columns to evaluate predicates.
+
+The current index is an in-memory inverted index backed by `std::set<int>`
+row IDs. It is not a persisted bit-vector bitmap. It is created only for
+categorical, low-cardinality columns. `AND` intersects candidate sets and
+`OR` unions them; non-indexed predicates use a sequential scan.
+
+#### Step 7: UPDATE and DELETE
+
+`UPDATE` first uses the same row-selection path as `SELECT`, validates the
+replacement value, and calls `StorageEngine::update()` for each matching
+logical row. The persistent backend maps the logical row to its physical
+record and rewrites the fixed-width value.
+
+`DELETE` also finds matching logical rows, then calls
+`StorageEngine::erase()` for every column. The backend writes `0xFF` to the
+record flag instead of shifting later records. This is a tombstone delete:
+future reads skip the deleted record while its bytes remain in the file.
+Indexes are rebuilt after both operations.
+
+### 2.3 Filesystem result
+
+For `company_db` and an `employees` table, the request ultimately produces:
+
+```text
+databases/
+└── company_db/
+    ├── metadata/
+    │   └── employees.schema
+    └── tables/
+        └── employees/
+            ├── id.bin
+            ├── name.bin
+            ├── name.dict
+            ├── department.bin
+            ├── department.dict
+            └── salary.bin
+```
+
+The `.schema` file stores table metadata as text. Each column has its own
+`.bin` file, which is the defining column-store behavior. Numeric and boolean
+values are stored as fixed-width binary values. String-like values are stored
+as dictionary IDs in `.bin`, with the original strings in `.dict`.
+
+### 2.4 Layered architecture overview
 
 This diagram shows the layered architecture of the entire system, from the user interface down to the physical file system:
 
@@ -127,20 +318,20 @@ flowchart TB
     end
 
     subgraph Execution ["🧠 3. Execution & Parsing Layer"]
-        Parser("🔍 Query parser\n(SQL → Query Objects)"):::execLayer
-        Engine("⚡ Query engine\n(Execution Logic)"):::execLayer
-        Where("⚖️ WhereClause\n(AND/OR Logic Evaluator)"):::execLayer
+        Parser("🔍 SQL matching\n(Regex + helpers)"):::execLayer
+        Engine("⚡ Database executor\n(Execution Logic)"):::execLayer
+        Where("⚖️ WHERE evaluator\n(AND/OR Logic)"):::execLayer
     end
 
     subgraph CoreComponents ["🛠️ 4. Core Components Layer"]
         SchemaMgr("📋 Schema manager\n(Table/Column Metadata)"):::compLayer
-        IndexMgr("🎯 Bitmap index manager\n(In-Memory BitSets)"):::compLayer
+        IndexMgr("🎯 Equality index\n(In-Memory row sets)"):::compLayer
     end
 
     subgraph Storage ["💾 5. Storage Layer (Strategy Pattern)"]
-        StorageEngine("📦 Binary storage engine\n(Storage Engine Impl)"):::storeLayer
-        NumPersist("🔢 NumericalPersister\n(INT, DOUBLE, etc.)"):::storeLayer
-        CatPersist("🔠 CategoricalPersister\n(STRING + Dictionary)"):::storeLayer
+        StorageEngine("📦 PersistentStorage\n(StorageEngine impl)"):::storeLayer
+        NumPersist("🔢 Fixed-width encoding\n(INT, DOUBLE, etc.)"):::storeLayer
+        CatPersist("🔠 Dictionary encoding\n(STRING + TEXT)"):::storeLayer
     end
 
     subgraph FileSystem ["📁 6. Physical File System"]
@@ -152,7 +343,7 @@ flowchart TB
     %% Connections
     CLI ==>|Raw SQL String| DB_API
     DB_API ==>|Raw SQL| Parser
-    Parser -.->|Parsed Query Object| DB_API
+    Parser -.->|Matched statement| DB_API
     DB_API ==>|Execute Query| Engine
 
     Engine <==>|Parse/Eval Conditions| Where
@@ -171,7 +362,7 @@ flowchart TB
     class Client,API,Execution,CoreComponents,Storage,FileSystem subgraphStyle;
 ```
 
-### 2.2 Query Execution Flow
+### 2.5 Query execution summary
 
 Here is the complete flow of how a query travels through the system:
 
@@ -188,21 +379,21 @@ flowchart TD
 
     A("⌨️ User types query in CLI"):::input ==> B("💻 C++ CLI"):::input
     B ==> C("🔌 C++ database API.execute()"):::core
-    C ==> D("🔍 Query parser.parse()"):::core
-    D -.-> E("📄 Query Object\n(SelectQuery, InsertQuery, etc.)"):::query
-    E ==> F("⚡ Query engine.execute()"):::core
+    C ==> D("🔍 Database::execute()\nRegex + helper parsing"):::core
+    D -.-> E("📄 Matched SQL statement\nand extracted values"):::query
+    E ==> F("⚡ Database executor"):::core
 
     F ==> G{"🔀 Which query type?"}:::branch
 
-    G ==>|CREATE| H("📋 Schema manager.createTable()\n+ storage engine.createTable()"):::action
-    G ==>|INSERT| I("✅ Validate → 📦 storage engine.appendValue()\n→ 🎯 Bitmap index manager.insertRow()"):::action
-    G ==>|SELECT| J("🔍 getFilteredRowIndexes()\n→ 📦 storage engine.readColumn()"):::action
-    G ==>|UPDATE| K("🔍 getFilteredRowIndexes()\n→ 📦 storage engine.updateValue()\n→ 🎯 Bitmap index manager.updateValue()"):::action
-    G ==>|DELETE| L("🔍 getFilteredRowIndexes()\n→ 🗑️ storage engine.deleteRow()\n→ 🎯 Bitmap index manager.buildIndex()"):::action
+    G ==>|CREATE| H("📋 SchemaManager::create()\n+ StorageEngine::create()"):::action
+    G ==>|INSERT| I("✅ Validate → StorageEngine::append()\n→ rebuild equality index"):::action
+    G ==>|SELECT| J("🔍 Find matching rows\n→ StorageEngine::read()"):::action
+    G ==>|UPDATE| K("🔍 Find matching rows\n→ StorageEngine::update()\n→ rebuild equality index"):::action
+    G ==>|DELETE| L("🔍 Find matching rows\n→ StorageEngine::erase()\n→ rebuild equality index"):::action
 
     J ==> M{"📊 Bitmap Index\navailable?"}:::branch
-    M ==>|Yes| N("🚀 Fast BitSet Lookup"):::success
-    M ==>|No| O("🐢 Sequential Scan\n(read column, check row-by-row)"):::slow
+    M ==>|Yes| N("🚀 Fast row-set lookup"):::success
+    M ==>|No| O("🐢 Sequential scan\n(read columns, check rows)"):::slow
 ```
 
 ### C++ implementation layers
@@ -210,13 +401,13 @@ flowchart TD
 | Package | Responsibility |
 |---------|---------------|
 | `cdb_cpp/main.cpp` | C++ command-line entry point |
-| `cdb_cpp/cdb.hpp` | Schema, storage, parser, executor, indexes, and shell |
+| `cdb_cpp/cdb.hpp` | Storage engine contract, persistent storage, parser, executor, indexes, and shell |
 | `cdb_cpp/api/database_api.hpp` | Database API facade |
 | `cdb_cpp/client/cli.hpp` | Interactive CLI and command routing |
 | `cdb_cpp/ddl/schema.hpp` | Column, table, and schema manager interfaces |
 | `cdb_cpp/query/query.hpp` | Query engine and WHERE abstractions |
 | `cdb_cpp/query/querytypes/` | Select, insert, update, and delete query models |
-| `cdb_cpp/storage/storage.hpp` | Storage engine interfaces |
+| `cdb_cpp/storage/storage.hpp` | Public storage-engine aliases and persistent implementation |
 | `cdb_cpp/storage/persistence/` | Column persistence contracts |
 | `cdb_cpp/util/filesystem.hpp` | Filesystem utility interface |
 | `cdb_cpp/CMakeLists.txt` | C++17 build configuration |
@@ -331,7 +522,30 @@ flowchart LR
 
 ### The Interface Pattern
 
-The project uses the **Strategy Pattern**: there is an interface `storage engine` and a concrete implementation `Binary storage engine`.
+The runnable implementation uses `StorageEngine` and `PersistentStorage`
+directly. The persister class diagram below is a conceptual description of
+type-specific encoding responsibilities; the current C++ source keeps those
+encoding routines inside `PersistentStorage`.
+
+The project uses the **Strategy Pattern**: `cdb::StorageEngine` defines the
+storage contract, while `cdb::PersistentStorage` implements the existing
+typed binary-column format. `cdb::Database` receives a
+`std::unique_ptr<cdb::StorageEngine>`, so another implementation can be
+provided without changing SQL parsing or execution.
+
+The persistent implementation is also exposed as
+`cdb::storage::PersistentStorageEngine` (with
+`cdb::storage::BinaryStorageEngine` retained as a compatibility alias):
+
+```cpp
+#include "api/database_api.hpp"
+#include "storage/storage.hpp"
+
+cdb::api::DatabaseAPI api(
+    "databases/company_db",
+    std::make_unique<cdb::storage::PersistentStorageEngine>(
+        "databases/company_db"));
+```
 
 
 > [!NOTE]
@@ -497,6 +711,11 @@ Logical:      0       -        1        2       -        3
 
 ## 6. Query Parser — How Queries Are Understood
 
+In the current implementation, parsing is performed inside
+`Database::execute()` using regular expressions and helper functions. The
+query-object examples in this section are illustrative descriptions of the
+information extracted from SQL, not classes present in the runnable source.
+
 ### What the Parser Does
 
 The `Query parser` takes a raw SQL string and converts it into a structured **Query object** that the engine can execute.
@@ -570,7 +789,11 @@ This happens in two steps:
 
 ## 7. Query Engine — Execution
 
-The `Query engine` receives a parsed `Query` object and executes it. Here is the step-by-step flow for each query type:
+The query execution logic is implemented by `Database::execute()` in
+`cdb_cpp/cdb.hpp`; it receives a raw SQL string, matches it with regular
+expressions, and performs the operation directly. The diagrams below are
+conceptual summaries of that implementation, not separate query-object
+classes.
 
 ### CREATE TABLE Execution
 
@@ -589,7 +812,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A["InsertQuery"] --> B["Get Table schema"]
+    A["INSERT statement"] --> B["Get table schema"]
     B --> C["Validate: column count match?"]
     C --> D["For each column:"]
     D --> E["Check NOT_NULL constraint"]
@@ -597,8 +820,8 @@ flowchart TD
     D --> G["Check PRIMARY_KEY / UNIQUE"]
     G --> H["Read existing column values\nCheck for duplicate"]
     H --> I["All validations passed?"]
-    I -->|Yes| J["For each column:\nstorage engine.appendValue()"]
-    J --> K["Bitmap index manager.insertRow()"]
+    I -->|Yes|     J["For each column:\nStorageEngine::append()"]
+    J --> K["Rebuild in-memory equality index"]
     I -->|No| L["Throw Error"]
 ```
 
@@ -608,13 +831,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["SelectQuery"] --> B["Resolve columns\n(* → all column names)"]
+    A["SELECT statement"] --> B["Resolve columns\n(* -> all column names)"]
     B --> C["Validate requested columns exist"]
-    C --> D["getFilteredRowIndexes()"]
+    C --> D["rows()"]
     D --> E{"WHERE clause?"}
     E -->|No| F["Return all row indexes"]
     E -->|Yes| G{"Bitmap index\navailable?"}
-    G -->|Yes| H["BitSet lookup\n(fast path)"]
+    G -->|Yes| H["Row-set lookup\n(fast path)"]
     G -->|No| I["Sequential scan\n(slow path)"]
     H --> J["List of matching row indexes"]
     I --> J
@@ -624,17 +847,18 @@ flowchart TD
 
 ### UPDATE Execution
 
-1. Find matching rows using `getFilteredRowIndexes()` (same WHERE logic as SELECT)
+1. Find matching rows using `rows()` (same WHERE logic as SELECT)
 2. For each matching row:
-   - Call `storage engine.updateValue()` → overwrites the bytes at that row position
-   - Call `indexManager.updateValue()` → updates the bitmap index (unset old bit, set new bit)
+   - Call `StorageEngine::update()` -> overwrites the value at that physical record
+   - Rebuild the table's in-memory equality index
 
 ### DELETE Execution
 
-1. Find matching rows using `getFilteredRowIndexes()`
-2. Delete rows **from bottom to top** (to preserve row indexes during deletion)
-3. For each row: Call `storage engine.deleteRow()` → sets the tombstone flag (0xFF) across all column files
-4. After all deletions: Call `indexManager.buildIndex()` → completely rebuilds the bitmap index (because row positions have shifted)
+1. Find matching rows using `rows()`
+2. Delete rows **from bottom to top** so logical row references remain valid
+3. For each row, call `StorageEngine::erase()` to set the tombstone flag
+   (`0xFF`) across all column files
+4. Rebuild the table's in-memory equality index
 
 > [!IMPORTANT]
 > **Why delete from bottom to top?** If you delete row 2 first, then row 5 becomes row 4 (because a live row is removed). By deleting from the highest index downward, earlier indexes remain valid until you process them.
@@ -696,7 +920,22 @@ Query: `SELECT * FROM emp WHERE dept = 'Finance' OR name = 'Alice'`
 
 ## 9. Bitmap Indexing
 
-### What is a Bitmap Index?
+### Current index implementation
+
+The current C++ implementation does not use a persisted bit-vector bitmap.
+It uses an in-memory inverted index:
+
+```cpp
+std::map<table, std::map<column,
+    std::map<value, std::set<int>>>>
+```
+
+Each value maps to a set of logical row IDs. The index is used for simple
+equality predicates and is rebuilt on startup and after writes. `SHOW BITMAP
+INDEX` is retained as the CLI command name for compatibility, but it displays
+these row sets.
+
+### What a bitmap index would be
 
 A bitmap index is a **data structure that maps each unique value in a column to a bit-vector** (array of 0s and 1s), where each bit represents one row.
 
@@ -711,7 +950,7 @@ Value "Finance"     → BitSet: 0 0 0 1 0
 ### In-Memory Structure
 
 
-### How a Bitmap Index is Built (`buildIndex()`)
+### How the current equality index is built (`rebuild()`)
 
 ```mermaid
 flowchart TD
@@ -719,10 +958,10 @@ flowchart TD
     B --> C["Read all values from .bin file"]
     C --> D["Count unique values"]
     D --> E{"Cardinality check"}
-    E -->|"> 1000 unique values"| F["SKIP index\n(too high cardinality)"]
-    E -->|"> 1000 rows AND\nunique/total > 5%"| F
-    E -->|"Low cardinality"| G["Create BitSet for each unique value"]
-    G --> H["For each row i:\nSet bit i in the BitSet\nfor that row's value"]
+    E -->|"> 100 unique values"| F["SKIP index\n(too high cardinality)"]
+    E -->|">= 10 rows AND\nunique/total > 50%"| F
+    E -->|"Low cardinality"| G["Create set<int> for each unique value"]
+    G --> H["For each row i:\ninsert i into the value's row set"]
 ```
 
 ### Cardinality Threshold — Why Skip High-Cardinality Columns?
@@ -733,12 +972,12 @@ flowchart TD
 > For **high-cardinality** columns (like `id` with thousands of unique values), the bitmap index wastes memory because you'd have thousands of BitSets, each with mostly 0s.
 
 **The rules**:
-- If **unique values > 1000** → Skip the index
-- If **rows ≥ 1000** AND **unique/total > 5%** → Skip the index
+- If **unique values > 100** -> Skip the index
+- If **rows ≥ 10** AND **unique/total > 50%** -> Skip the index
 
 This check happens:
-1. During initial `buildIndex()` at startup
-2. Dynamically during `insertRow()` — if the threshold is crossed, the index for that column is **dropped** at runtime
+1. During initial `rebuild()` at startup
+2. After `INSERT`, `UPDATE`, and `DELETE`, when the table is rebuilt
 
 ### How Bitmap Index Speeds Up Queries
 
@@ -750,58 +989,49 @@ Step 2: Check each value: row 0? No. row 1? Yes. row 2? No. row 3? No. row 4? Ye
 Step 3: Result rows: [1, 4]
 ```
 
-**With index** (Bitmap Lookup):
+**With index** (row-set lookup):
 ```
 Query: SELECT * FROM emp WHERE dept = 'HR'
-Step 1: Look up indexes["emp"]["dept"]["HR"] → BitSet{1, 4}
+Step 1: Look up indexes["emp"]["dept"]["HR"] -> set {1, 4}
 Step 2: Result rows: [1, 4]  ← instant!
 ```
 
-### AND/OR with Bitmap Index
+### AND/OR with indexed row sets
 
-The **real power** is when combining multiple conditions using **bitwise operations**:
+Multiple indexed equality conditions can be combined by set operations:
 
 **Query**: `WHERE dept = 'HR' AND salary > 50000`
 
 ```
-dept = 'HR'      → BitSet: 0 1 0 0 1  (rows 1, 4)
-salary > 50000   → BitSet: 1 0 0 1 1  (rows 0, 3, 4)
+dept = 'HR'      -> set {1, 4}
+salary > 50000   -> no equality index; evaluate the predicate normally
 
-AND operation (bitwise AND):
-  0 1 0 0 1
-& 1 0 0 1 1
-= 0 0 0 0 1  → Only row 4 matches both!
+AND operation (set intersection):
+  indexed candidates intersect with rows passing salary > 50000
 ```
 
-**For OR**: Use bitwise OR instead:
-```
-  0 1 0 0 1
-| 1 0 0 1 1
-= 1 1 0 1 1  → Rows 0, 1, 3, 4 match at least one condition
-```
+For `OR`, indexed candidate sets are combined with set union when all
+relevant branches can use the index.
 
-> [!TIP]
-> **Key viva point**: Bitmap AND/OR operates on entire columns at once — it's like comparing thousands of rows in a single CPU instruction. This is *significantly* faster than checking row-by-row.
+> [!NOTE]
+> The current implementation uses `std::set` intersection and union, not
+> bitwise operations. A future true bitmap implementation could replace the
+> set values behind the same query-selection boundary.
 
 ### Fallback to Sequential Scan
 
-If **any** column in the WHERE clause doesn't have a bitmap index, the system falls back to a sequential scan for **all** conditions in that query. The console will print:
+If an expression cannot use an equality index, the system evaluates it by
+reading column vectors and checking rows sequentially.
 
-```
-[Bitmap Index] Used fast lookup for emp (2 condition(s) joined by AND), matched 1 logical row(s).
-```
-or
-```
-[Sequential Scan] Used full scan for emp (2 condition(s) joined by AND), matched 1 logical row(s).
-```
+The current CLI does not print separate bitmap/scan execution messages.
 
 ### Keeping the Index Updated
 
 | Operation | Index Action |
 |-----------|-------------|
-| **INSERT** | Set the new bit in the appropriate BitSet for each column value |
-| **UPDATE** | Clear the old value's bit, set the new value's bit |
-| **DELETE** | Rebuild the entire index (since row positions shift after deletion) |
+| **INSERT** | Rebuild the affected table's row-set indexes |
+| **UPDATE** | Rebuild the affected table's row-set indexes |
+| **DELETE** | Rebuild the affected table's row-set indexes |
 
 ---
 
@@ -1126,17 +1356,25 @@ Sneha
 ### Q4: Explain the tombstone deletion mechanism.
 **A**: Instead of physically removing bytes from the file (which would require rewriting the entire file and shifting everything), we set a 1-byte flag from `ALIVE (0x00)` to `DELETED (0xFF)`. During reads, deleted records are simply skipped. This makes deletion O(1) in terms of I/O.
 
-### Q5: What is a bitmap index and when is it useful?
-**A**: A bitmap index creates a bit-vector for each unique value in a column. Each bit represents one row — `1` if the row has that value, `0` otherwise. It's useful for low-cardinality columns (few unique values, like department names). Multiple conditions can be combined using fast bitwise AND/OR operations.
+### Q5: What index does the current implementation use?
+**A**: It uses an in-memory inverted index that maps a table, column, and
+value to a `std::set<int>` of logical row IDs. It is built for categorical,
+low-cardinality columns and supports fast equality candidates. It is not a
+persisted bit-vector bitmap.
 
-### Q6: Why do you skip bitmap indexing for high-cardinality columns?
-**A**: If a column has many unique values (e.g., an `id` column with 10,000 unique values), you'd need 10,000 BitSets, each as wide as the total number of rows. This uses more memory than it saves in query time, so we skip it. The threshold is >1000 unique values, or >5% cardinality ratio for tables with >1000 rows.
+### Q6: Why do you skip equality indexing for high-cardinality columns?
+**A**: If a column has many unique values, the row-set map becomes expensive and
+provides little reuse. The current thresholds skip columns with more than 100
+unique values, or columns with at least 10 rows whose unique/row ratio exceeds
+50%.
 
 ### Q7: What design patterns did you use?
 **A**:
-- **Strategy Pattern**: `storage engine` interface with `Binary storage engine` implementation — allows swapping storage backends
-- **Template Method Pattern**: `BasePersister` defines the structure (header, record layout, delete), while `NumericalPersister` and `CategoricalPersister` implement type-specific encoding/decoding
-- **Command Pattern**: Each query type (`SelectQuery`, `InsertQuery`, etc.) encapsulates the query data as an object, which is then dispatched to the engine
+- **Strategy Pattern**: `cdb::StorageEngine` interface with
+  `cdb::PersistentStorage` implementation — allows swapping storage backends
+- The current source does not contain separate `BasePersister`, query-command,
+  or per-statement query-object classes; those names describe an earlier
+  conceptual design, not the runnable implementation.
 
 ### Q8: How does the system handle concurrent modifications?
 **A**: The current implementation is single-threaded (one CLI client), so concurrent modification is not an issue. In a production system, you'd need locking mechanisms (file locks, row locks, etc.).
@@ -1149,32 +1387,39 @@ Sneha
 
 ### Q11: Explain the flow of `SELECT * FROM emp WHERE dept='HR' AND salary > 50000`.
 **A**:
-1. `C++ CLI` reads the query and calls `C++ database API.execute()`
-2. `Query parser.parse()` identifies it as a SELECT, splits the WHERE clause, and creates a `SelectQuery` with a `WhereClause` containing two `WhereCondition` objects joined by AND
-3. `Query engine.executeSelect()` validates columns, then calls `getFilteredRowIndexes()`
-4. `Bitmap index manager` evaluates each condition using its BitSet, ANDs the results, and returns matching row indices
-5. Only the matched rows are extracted from the column data and formatted as a table
+1. `CLIClient` sends the query to `DatabaseAPI::execute()`.
+2. `Database::execute()` matches the SELECT expression and extracts the WHERE
+   text.
+3. `rows()` loads column vectors and asks the equality index for candidates
+   where applicable.
+4. `evaluateWhere()` evaluates both predicates with AND semantics.
+5. Matching row values are formatted and returned to the CLI.
 
 ### Q12: What constraints does your system support?
 **A**: `PRIMARY_KEY` (ensures uniqueness + implicitly not null), `UNIQUE` (no duplicate values), and `NOT_NULL` (value cannot be empty or null). These are checked during INSERT by reading the existing column data.
 
 ### Q13: Why do you delete rows from bottom to top?
-**A**: Because deleting a row shifts the logical indexes of all rows below it. If we deleted row 1 first, what was row 4 would become row 3, and our reference to "row 4" would be wrong. By going bottom to top, we ensure that earlier indexes remain valid.
+**A**: The delete loop processes matching logical rows in reverse order so
+earlier row references remain valid while tombstones are written. Records are
+not physically shifted; deleted records remain as tombstones.
 
 ### Q14: What is the `Binary storage engine.typeTag()` method for?
 **A**: It maps SQL type names (like `"INT"`, `"STRING"`) to integer type tags (like `3`, `9`) that are stored in the binary file header. This allows the system to know what type of data is in a column file without needing the schema.
 
 ### Q15: How does the `C++ database API` coordinate all components?
-**A**: `C++ database API` is the **central coordinator**. On initialization, it creates: `Schema manager` (loads schemas), `Binary storage engine` (sets up storage), `Bitmap index manager` (builds indexes using both storage and schema), and `Query engine` (receives all three). When a query comes in: `C++ database API.execute()` calls `Query parser.parse()` then `Query engine.execute()` — a clean two-step process.
+**A**: `DatabaseAPI` is a thin facade. It owns `Database`, and
+`Database::execute()` coordinates schema lookup, validation, row selection,
+the injected `StorageEngine`, and in-memory index rebuilding. The default
+engine is `PersistentStorage`, but another implementation can be injected.
 
 ---
 
 > [!IMPORTANT]
 > ## Final Tips for Your Viva
-> 1. **Know the flow**: User → CLI → C++ database API → Parser → Engine → Storage/Index. Every query follows this flow.
+> 1. **Know the flow**: User -> CLI -> DatabaseAPI -> Database -> Storage/Index -> filesystem.
 > 2. **Know the file system layout**: `databases/<db>/metadata/*.schema` for blueprints, `databases/<db>/tables/<table>/*.bin` for data.
 > 3. **Be ready to trace a query**: Pick any query and walk through it step by step from parsing to result.
-> 4. **Understand the trade-offs**: Column-store vs row-store, bitmap index vs sequential scan, tombstone delete vs physical delete, dictionary encoding vs raw strings.
-> 5. **Know your design patterns**: Strategy, Template Method, Command — and WHY you used them.
+> 4. **Understand the trade-offs**: Column-store vs row-store, row-set index vs sequential scan, tombstone delete vs physical delete, dictionary encoding vs raw strings.
+> 5. **Know the Strategy Pattern**: `StorageEngine` allows the persistent backend to be replaced.
 
 Good luck with your viva! 🚀

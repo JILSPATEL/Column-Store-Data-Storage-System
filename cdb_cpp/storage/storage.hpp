@@ -3,21 +3,15 @@
 #include "../cdb.hpp"
 
 namespace cdb::storage {
-class StorageEngine {
-protected:
-  cdb::Storage storage;
+// Re-export the backend contract from the public storage namespace.
+using StorageEngine = cdb::StorageEngine;
 
+// Named persistent backend for clients that want explicit engine selection.
+class PersistentStorageEngine : public cdb::PersistentStorage {
 public:
-  explicit StorageEngine(const cdb::fs::path &root) : storage(root) {}
-  virtual ~StorageEngine() = default;
-  std::vector<std::string> readColumn(const std::string &table,
-                                       const std::string &column) const {
-    return storage.read(table, column);
-  }
+  explicit PersistentStorageEngine(const cdb::fs::path &root)
+      : cdb::PersistentStorage(root) {}
 };
 
-class BinaryStorageEngine : public StorageEngine {
-public:
-  explicit BinaryStorageEngine(const cdb::fs::path &root) : StorageEngine(root) {}
-};
+using BinaryStorageEngine = PersistentStorageEngine;
 }

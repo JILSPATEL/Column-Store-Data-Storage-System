@@ -9,6 +9,11 @@ class DatabaseAPI {
 public:
   explicit DatabaseAPI(const cdb::fs::path &root) : database(root) {}
 
+  // Exposes storage-engine injection through the higher-level database API.
+  DatabaseAPI(const cdb::fs::path &root,
+              std::unique_ptr<cdb::StorageEngine> storage)
+      : database(root, std::move(storage)) {}
+
   std::string execute(const std::string &query) {
     return database.execute(query);
   }

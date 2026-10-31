@@ -341,7 +341,26 @@ inline int width(int t) {
                             : 4;
 }
 
-class Storage {
+// Defines the common contract that every storage backend must implement.
+// Query execution depends on this interface instead of a concrete file format.
+class StorageEngine {
+public:
+  virtual ~StorageEngine() = default;
+  virtual void create(const Schema &s) = 0;
+  virtual std::vector<std::string> read(const std::string &table,
+                                         const std::string &column) const = 0;
+  virtual void append(const std::string &table, const Column &column,
+                      const std::string &value) = 0;
+  virtual void update(const std::string &table, const Column &column, int row,
+                      const std::string &value) = 0;
+  virtual void erase(const std::string &table, const Schema &schema,
+                     int row) = 0;
+  virtual void drop(const std::string &table) = 0;
+};
+
+// Persists typed column data in the existing binary files and dictionaries.
+// This is the default backend, preserving compatibility with current databases.
+class PersistentStorage : public StorageEngine {
   fs::path root;
   fs::path path(const std::string &t, const std::string &c) const {
     return root / "tables" / t / (c + ".bin");
@@ -375,10 +394,10 @@ class Storage {
   }
 
 public:
-  explicit Storage(const fs::path &r) : root(r) {
+  explicit PersistentStorage(const fs::path &r) : root(r) {
     fs::create_directories(root / "tables");
   }
-  void create(const Schema &s) {
+  void create(const Schema &s) override {
     fs::create_directories(root / "tables" / s.name);
     for (auto &c : s.columns) {
       std::ofstream f(path(s.name, c.name), std::ios::binary);
@@ -389,7 +408,7 @@ public:
     }
   }
   std::vector<std::string> read(const std::string &t,
-                                const std::string &c) const {
+                                const std::string &c) const override {
     std::vector<std::string> r;
     std::ifstream f(path(t, c), std::ios::binary);
     if (!f)
@@ -442,7 +461,8 @@ public:
     }
     return r;
   }
-  void append(const std::string &t, const Column &c, const std::string &value) {
+  void append(const std::string &t, const Column &c,
+              const std::string &value) override {
     auto p = path(t, c.name);
     std::fstream f(p, std::ios::in | std::ios::out | std::ios::binary);
     f.seekg(0);
@@ -492,7 +512,7 @@ public:
     put32(f, n + 1);
   }
   void update(const std::string &t, const Column &c, int row,
-              const std::string &v) {
+              const std::string &v) override {
     auto p = path(t, c.name);
     std::fstream f(p, std::ios::in | std::ios::out | std::ios::binary);
     int tg = get32(f), n = get32(f), live = 0, phys = -1;
@@ -538,7 +558,7 @@ public:
       put64(f, b);
     }
   }
-  void erase(const std::string &t, const Schema &s, int row) {
+  void erase(const std::string &t, const Schema &s, int row) override {
     for (auto &c : s.columns) {
       auto p = path(t, c.name);
       std::fstream f(p, std::ios::in | std::ios::out | std::ios::binary);
@@ -557,11 +577,13 @@ public:
       }
     }
   }
-  void drop(const std::string &t) {
+  void drop(const std::string &t) override {
     std::error_code ec;
     fs::remove_all(root / "tables" / t, ec);
   }
 };
+
+using Storage = PersistentStorage;
 
 struct Cond {
   std::string col, op, val;
@@ -690,7 +712,7 @@ inline bool evaluateWhere(const std::string &raw, Lookup lookup) {
 
 class Database {
   SchemaManager sm;
-  Storage st;
+  std::unique_ptr<StorageEngine> st;
   std::map<std::string,
            std::map<std::string, std::map<std::string, std::set<int>>>>
       idx;
@@ -757,7 +779,7 @@ class Database {
       return;
     for (auto &c : s->columns)
       if (c.categorical()) {
-        auto v = st.read(t, c.name);
+        auto v = st->read(t, c.name);
         std::set<std::string> d(v.begin(), v.end());
         if (d.size() > 100 ||
             (v.size() >= 10 && double(d.size()) / v.size() > .5))
@@ -769,11 +791,11 @@ class Database {
   std::vector<int> rows(const std::string &t, const Schema &s, const Where *w) {
     int n = 0;
     for (auto &c : s.columns)
-      n = std::max(n, (int)st.read(t, c.name).size());
+      n = std::max(n, (int)st->read(t, c.name).size());
     std::vector<int> out;
     std::map<std::string, std::vector<std::string>> data;
     for (auto &c : s.columns)
-      data[c.name] = st.read(t, c.name);
+      data[c.name] = st->read(t, c.name);
     std::set<int> candidates = allRows(n);
     bool usedIndex = false;
     if (w && !w->expression.empty())
@@ -810,7 +832,15 @@ class Database {
   }
 
 public:
-  explicit Database(const fs::path &r) : sm(r), st(r) {
+  // Keeps the original constructor behavior by selecting persistent storage.
+  explicit Database(const fs::path &r)
+      : Database(r, std::unique_ptr<StorageEngine>(new PersistentStorage(r))) {}
+
+  // Allows callers to provide an alternative storage backend.
+  Database(const fs::path &r, std::unique_ptr<StorageEngine> engine)
+      : sm(r), st(std::move(engine)) {
+    if (!st)
+      throw std::invalid_argument("Storage engine must not be null");
     for (auto &x : sm.all())
       rebuild(x.first);
   }
@@ -838,12 +868,12 @@ public:
           s.columns.push_back(c);
         }
         sm.create(s);
-        st.create(s);
+        st->create(s);
         rebuild(s.name);
         return "Table " + s.name + " created successfully.";
       }
       if (std::regex_match(q, m, rx("DROP\\s+TABLE\\s+(\\w+)"))) {
-        st.drop(m[1]);
+        st->drop(m[1]);
         sm.drop(m[1]);
         idx.erase(m[1]);
         return "Table dropped successfully.";
@@ -861,11 +891,11 @@ public:
             throw std::runtime_error("NOT_NULL violation");
           validateValue(v[i], s->columns[i].type);
           if (s->columns[i].has("PRIMARY_KEY") || s->columns[i].has("UNIQUE")) {
-            const auto existing = st.read(s->name, s->columns[i].name);
+            const auto existing = st->read(s->name, s->columns[i].name);
             if (std::find(existing.begin(), existing.end(), unquote(v[i])) != existing.end())
               throw std::runtime_error("Constraint violation on " + s->columns[i].name);
           }
-          st.append(s->name, s->columns[i], v[i]);
+          st->append(s->name, s->columns[i], v[i]);
         }
         rebuild(s->name);
         return "1 row inserted.";
@@ -888,7 +918,7 @@ public:
         auto rr = rows(s->name, *s, m[3].matched ? &w : nullptr);
         std::vector<std::vector<std::string>> d;
         for (auto &c : cols)
-          d.push_back(st.read(s->name, c));
+          d.push_back(st->read(s->name, c));
         std::ostringstream o;
         for (size_t j = 0; j < cols.size(); ++j)
           o << (j ? "\t" : "") << cols[j];
@@ -916,14 +946,14 @@ public:
           w = parseWhere(m[4]);
         auto rr = rows(s->name, *s, m[4].matched ? &w : nullptr);
         if (setColumn->has("PRIMARY_KEY") || setColumn->has("UNIQUE")) {
-          const auto existing = st.read(s->name, setColumn->name);
+          const auto existing = st->read(s->name, setColumn->name);
           for (size_t i = 0; i < existing.size(); ++i)
             if (std::find(rr.begin(), rr.end(), (int)i) == rr.end() &&
                 existing[i] == unquote(m[3].str()))
               throw std::runtime_error("Constraint violation on " + setColumn->name);
         }
         for (int i : rr)
-          st.update(s->name, *setColumn, i, m[3]);
+          st->update(s->name, *setColumn, i, m[3]);
         rebuild(s->name);
         return std::to_string(rr.size()) + " rows updated.";
       }
@@ -937,7 +967,7 @@ public:
           w = parseWhere(m[2]);
         auto rr = rows(s->name, *s, m[2].matched ? &w : nullptr);
         for (auto i = rr.rbegin(); i != rr.rend(); ++i)
-          st.erase(s->name, *s, *i);
+          st->erase(s->name, *s, *i);
         rebuild(s->name);
         return std::to_string(rr.size()) + " rows deleted.";
       }
